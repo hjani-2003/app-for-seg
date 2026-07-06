@@ -1,0 +1,11 @@
+PySide6          # desktop GUI framework
+pyqtgraph        # image view widget used by the viewer
+nibabel          # load NIfTI (.nii/.nii.gz) volumes
+numpy
+pyyaml           # read the models' config/train yaml files
+einops           # used by MambaVision's internals (models/mavin-hpc/src)
+
+# monai and torch are versioned/built per-machine (CPU vs CUDA) — see the
+# "Setup" section in README.md instead of installing them from this file.
+monai
+torch
