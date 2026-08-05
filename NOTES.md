@@ -129,3 +129,59 @@ panel/slider layout. The dock can be made floatable/closable via standard
 - ⚠ Flagged, not yet solved: the pixel→mm mapping must go through the same
   transpose/flip/rotate pipeline as `_render()` — worked out with a concrete
   example in Phase 1, before any geometry/line-fitting code is written.
+
+## Phase 3 addendum: napari → pyqtgraph translation
+
+The Phase 3 spec was written in napari terms (Shapes layers,
+`layer.events.data`, native shape selection). Confirmed with the user this
+app has no napari (see the Phase 0 correction above) and got explicit
+sign-off to reinterpret every napari-specific instruction as its pyqtgraph
+equivalent rather than adding napari as a second embedded GUI framework.
+Mapping used, in `ui/rano_dock.py`:
+
+| Spec (napari) | This app (pyqtgraph) |
+|---|---|
+| Two Shapes layers, one per region type | One `pg.LineSegmentROI` pair (major+minor) per lesion, added directly to `mask_panel`'s existing `ViewBox`; colored by `region_type` via `ui/style.py:RANO_LINE_COLORS` |
+| `layer.events.data` | Each ROI's `sigRegionChanged` (fires live during drag, not just on release) |
+| Native shape selection + Delete | `QTableWidget` row selection + a `QShortcut(Qt.Key_Delete)` scoped to the table. Bonus: `pg.ROI`'s own built-in right-click "Remove" (`sigRemoveRequested`) is also wired to the same removal path, since it turned out to exist natively. |
+| Add-line-pair mode | A checkable "Add Line Pair" button + region-type combo; hooks the mask panel's `scene().sigMouseClicked` and collects exactly 4 clicks (major p1, major p2, minor p1, minor p2) per lesion, then stays in add mode for further pairs until toggled off. |
+
+**Coordinate mapping (the load-bearing part).** `rano_measure.geometry`/
+`lesion` compute lines in raw voxel (row, col) space — the same space
+`np.take(volume, idx, axis=axis)` uses — not the flipped/rotated space
+`_render()` builds only for display. This was flagged as an open risk back
+in Phase 1 and had to be resolved here. Empirically verified (not assumed)
+in development:
+- `_render()`'s `transpose → flipud → rot90(k=1)` chain collapses to a
+  single 180° point reflection: `display[R-1-r, C-1-c] = base[r, c]` for a
+  slice of shape `(R, C)`. Verified by probing every cell of a small test
+  array through the actual `_render()` code.
+- pyqtgraph's default `imageAxisOrder='col-major'` maps an `ImageItem`'s
+  array index `(axis0, axis1)` directly to view-space `(x, y)` with no
+  swap (verified via `ImageItem.mapToView()` and `boundingRect()` on a
+  known asymmetric test array).
+- Composing these: voxel `(r, c)` in an `(R, C)` slice → view-space
+  `(R-1-r, C-1-c)`, and since a point reflection is its own inverse, the
+  same formula converts a clicked/dragged view-space point back to voxel
+  space. Implemented as `RanoDock._voxel_to_view` / `_view_to_voxel`.
+- End-to-end correctness (not just the isolated formula) was confirmed by
+  driving the real app against a real BraTS case: the computed CE lesion
+  line rendered exactly on top of the ET (orange) region in the mask
+  overlay panel, and a synthetic drag/add-line-pair test round-tripped an
+  exact 30mm/20mm move back through the pipeline correctly.
+
+**Scope decisions made explicit** (per the spec's own instruction not to
+leave these implicit):
+- Manual line drawing/editing is Axial-only, exactly as the spec
+  requested — enforced by disabling the add controls and hiding all ROIs
+  whenever the plane selector isn't "Axial" (`RanoDock.show_slice`).
+- RANO lesion detection itself (`populate_from_segmentation`) always runs
+  against the axial axis regardless of which plane is currently displayed
+  — it's computed once per segmentation, not per plane.
+- The "Add Line Pair" toggle stays active across multiple lesions (doesn't
+  auto-untoggle after one pair) so the user isn't forced to re-click it
+  for every new lesion; the spec didn't say either way, this was the more
+  usable reading.
+- Manual-pair validation warnings surface via a persistent non-modal label
+  in the dock, not a popup dialog — keeps "warn, don't block" from being
+  disruptive.

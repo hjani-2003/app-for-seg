@@ -225,3 +225,33 @@ def find_bidimensional_diameters(
         product_mm2=major.length_mm * minor.length_mm,
         measurable=measurable,
     )
+
+
+def validate_manual_pair(mask, major_line, minor_line, spacing, *, angle_tol_deg=DEFAULT_ANGLE_TOL_DEG):
+    """Check whether a manually-drawn (major_line, minor_line) pair roughly
+    satisfies RANO's inscribed + perpendicular constraints.
+
+    Returns (ok, reasons) -- reasons is a list of human-readable problems
+    found, empty when ok. Meant to back a non-blocking warning: a human is
+    allowed to override RANO's own geometric assumptions in edge cases, so
+    callers should surface `reasons` rather than reject the pair.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    row_mm, col_mm = spacing
+    reasons = []
+
+    if not _segment_valid(mask, *major_line):
+        reasons.append("Major line is not fully inside the lesion mask.")
+    if not _segment_valid(mask, *minor_line):
+        reasons.append("Minor line is not fully inside the lesion mask.")
+
+    major_angle = _segment_angle_rad(*major_line, row_mm, col_mm)
+    minor_angle = _segment_angle_rad(*minor_line, row_mm, col_mm)
+    angle_tol_rad = np.radians(angle_tol_deg)
+    if not _is_perpendicular(major_angle, minor_angle, angle_tol_rad):
+        deviation_deg = np.degrees(np.pi / 2 - _acute_angle_between(major_angle, minor_angle))
+        reasons.append(
+            f"Lines are {deviation_deg:.1f} deg away from perpendicular (tolerance {angle_tol_deg} deg)."
+        )
+
+    return (len(reasons) == 0, reasons)

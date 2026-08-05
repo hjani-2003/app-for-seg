@@ -19,6 +19,10 @@ SEGMENTATION_COLORS = {
 }
 CLASS_LABELS = {1: "NCR", 2: "ED", 3: "ET"}
 
+# RANO bidimensional-measurement line colors, one per region type — picked
+# to stay visually distinct from SEGMENTATION_COLORS above.
+RANO_LINE_COLORS = {"CE": "#ff2fb0", "nonCE": "#39e6ff"}
+
 
 def hex_to_rgb01(hex_color):
     hex_color = hex_color.lstrip("#")

@@ -11,6 +11,7 @@ from core.data_loader import load_brats_folder, normalize_for_display
 from core.inference import InferenceWorker
 from ui.mask_render import overlay_image_with_mask
 from ui.panels import InputPanel, ModelPanel, ViewPanel
+from ui.rano_dock import RanoDock
 from ui.style import DARK_STYLESHEET, apply_pg_theme, CLASS_LABELS, SEGMENTATION_COLORS
 
 
@@ -95,6 +96,9 @@ class MRIViewer(QMainWindow):
         self.setStatusBar(self.status)
         self.status.showMessage("Ready")
 
+        self.rano_dock = RanoDock(self.mask_panel["image_view"])
+        self.addDockWidget(Qt.RightDockWidgetArea, self.rano_dock)
+
     def _build_panel(self, title):
         container = QWidget()
         layout = QVBoxLayout()
@@ -158,12 +162,14 @@ class MRIViewer(QMainWindow):
             self.paths = {}
             self.segmentation = None
             self.slice_slider.setEnabled(False)
+            self.rano_dock.clear()
             self.status.showMessage(str(exc))
             self._refresh_run_enabled()
             return
 
         self.volumes = {m: normalize_for_display(v) for m, v in self.raw_volumes.items()}
         self.segmentation = None
+        self.rano_dock.clear()
 
         modality = self.view_panel.current_modality()
         axis = PLANE_AXES[self.view_panel.current_plane()]
@@ -201,6 +207,7 @@ class MRIViewer(QMainWindow):
 
     def on_inference_done(self, mask, info):
         self.segmentation = mask
+        self.rano_dock.populate_from_segmentation(self.segmentation, self.spacing)
         self.progress_bar.setVisible(False)
         self.status.showMessage(f"Inference completed ({info})")
         self._refresh_run_enabled()
@@ -252,6 +259,8 @@ class MRIViewer(QMainWindow):
         self.mask_panel["title_label"].setText(f"{plane} + Mask")
         self.slice_label.setText(f"Slice {idx + 1} / {axis_len}  ·  {plane}")
         self.legend_widget.setVisible(has_mask)
+
+        self.rano_dock.show_slice(idx, plane)
 
     def _render(self, image_view, display, axis):
         # Volumes are RAS+ canonical: transpose to put the slice's rows/cols in image-plane order, flip vertically so superior/anterior is up, then rotate 90 degrees clockwise to match the desired on-screen layout.
