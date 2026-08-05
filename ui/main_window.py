@@ -2,11 +2,11 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel
 )
 
-from core.constants import PLANES, PLANE_AXES
+from core.constants import PLANE_AXES
 from core.data_loader import load_brats_folder, normalize_for_display
 from core.inference import InferenceWorker
 from ui.mask_render import overlay_image_with_mask
@@ -26,7 +26,6 @@ class MRIViewer(QMainWindow):
         self.paths = {}
         self.segmentation = None
         self.worker = None
-        self.plane_panels = {}
 
         apply_pg_theme()
         self._build_ui()
@@ -48,7 +47,8 @@ class MRIViewer(QMainWindow):
         self.model_panel.architecture_changed.connect(self._refresh_run_enabled)
 
         self.view_panel = ViewPanel()
-        self.view_panel.changed.connect(self.update_all)
+        self.view_panel.changed.connect(self.update_view)
+        self.view_panel.plane_changed.connect(self._on_plane_changed)
 
         top_controls = QHBoxLayout()
         top_controls.setSpacing(10)
@@ -60,16 +60,25 @@ class MRIViewer(QMainWindow):
         self.legend_widget = self._build_legend()
         self.legend_widget.setVisible(False)
 
-        grid = QGridLayout()
-        grid.setSpacing(10)
-        for plane in PLANES:
-            self.plane_panels[plane] = self._build_plane_panel(plane)
-        grid.addWidget(self.plane_panels["Axial"]["container"], 0, 0)
-        grid.addWidget(self.plane_panels["Coronal"]["container"], 0, 1)
-        grid.addWidget(self.plane_panels["Sagittal"]["container"], 1, 0)
+        self.mri_panel = self._build_panel("Axial")
+        self.mask_panel = self._build_panel("Axial + Mask")
 
-        self.label_view, label_container = self._build_label_panel()
-        grid.addWidget(label_container, 1, 1)
+        panels_row = QHBoxLayout()
+        panels_row.setSpacing(10)
+        panels_row.addWidget(self.mri_panel["container"])
+        panels_row.addWidget(self.mask_panel["container"])
+
+        self.slice_slider = QSlider(Qt.Horizontal)
+        self.slice_slider.setEnabled(False)
+        self.slice_slider.valueChanged.connect(self.update_view)
+
+        self.slice_label = QLabel("No slice")
+        self.slice_label.setAlignment(Qt.AlignCenter)
+
+        slider_row = QHBoxLayout()
+        slider_row.setSpacing(10)
+        slider_row.addWidget(self.slice_slider)
+        slider_row.addWidget(self.slice_label)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -77,7 +86,8 @@ class MRIViewer(QMainWindow):
 
         main_layout.addLayout(top_controls)
         main_layout.addWidget(self.legend_widget)
-        main_layout.addLayout(grid)
+        main_layout.addLayout(panels_row)
+        main_layout.addLayout(slider_row)
         main_layout.addWidget(self.progress_bar)
         central.setLayout(main_layout)
 
@@ -85,59 +95,29 @@ class MRIViewer(QMainWindow):
         self.setStatusBar(self.status)
         self.status.showMessage("Ready")
 
-    def _build_plane_panel(self, plane):
+    def _build_panel(self, title):
         container = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        title = QLabel(plane)
-        title.setAlignment(Qt.AlignCenter)
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignCenter)
 
         image_view = pg.ImageView()
         image_view.ui.roiBtn.hide()
         image_view.ui.menuBtn.hide()
         image_view.ui.histogram.hide()
 
-        slider = QSlider(Qt.Horizontal)
-        slider.setEnabled(False)
-        slider.valueChanged.connect(lambda _v, p=plane: self.update_plane(p))
-
-        slice_label = QLabel("No slice")
-        slice_label.setAlignment(Qt.AlignCenter)
-
-        layout.addWidget(title)
+        layout.addWidget(title_label)
         layout.addWidget(image_view)
-        layout.addWidget(slider)
-        layout.addWidget(slice_label)
         container.setLayout(layout)
 
         return {
             "container": container,
             "image_view": image_view,
-            "slider": slider,
-            "slice_label": slice_label,
+            "title_label": title_label,
         }
-
-    def _build_label_panel(self):
-        container = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-
-        title = QLabel("Axial + Mask")
-        title.setAlignment(Qt.AlignCenter)
-
-        image_view = pg.ImageView()
-        image_view.ui.roiBtn.hide()
-        image_view.ui.menuBtn.hide()
-        image_view.ui.histogram.hide()
-
-        layout.addWidget(title)
-        layout.addWidget(image_view)
-        container.setLayout(layout)
-
-        return image_view, container
 
     def _build_legend(self):
         legend = QWidget()
@@ -177,8 +157,7 @@ class MRIViewer(QMainWindow):
             self.spacing = None
             self.paths = {}
             self.segmentation = None
-            for pv in self.plane_panels.values():
-                pv["slider"].setEnabled(False)
+            self.slice_slider.setEnabled(False)
             self.status.showMessage(str(exc))
             self._refresh_run_enabled()
             return
@@ -187,18 +166,18 @@ class MRIViewer(QMainWindow):
         self.segmentation = None
 
         modality = self.view_panel.current_modality()
+        axis = PLANE_AXES[self.view_panel.current_plane()]
         ref = self.volumes[modality]
-        for plane, pv in self.plane_panels.items():
-            max_idx = ref.shape[PLANE_AXES[plane]] - 1
-            pv["slider"].blockSignals(True)
-            pv["slider"].setEnabled(True)
-            pv["slider"].setMaximum(max_idx)
-            pv["slider"].setValue(max_idx // 2)
-            pv["slider"].blockSignals(False)
+        max_idx = ref.shape[axis] - 1
+        self.slice_slider.blockSignals(True)
+        self.slice_slider.setEnabled(True)
+        self.slice_slider.setMaximum(max_idx)
+        self.slice_slider.setValue(max_idx // 2)
+        self.slice_slider.blockSignals(False)
 
         self.status.showMessage(f"Loaded case from {folder}")
         self._refresh_run_enabled()
-        self.update_all()
+        self.update_view()
 
     def _refresh_run_enabled(self):
         has_case = len(self.raw_volumes) == 4
@@ -225,49 +204,53 @@ class MRIViewer(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status.showMessage(f"Inference completed ({info})")
         self._refresh_run_enabled()
-        self.update_all()
+        self.update_view()
 
     def on_inference_failed(self, message):
         self.progress_bar.setVisible(False)
         self.status.showMessage(message)
         self._refresh_run_enabled()
 
-    def update_all(self):
-        for plane in PLANES:
-            self.update_plane(plane)
-
-    def update_plane(self, plane):
+    def _on_plane_changed(self, plane):
         if not self.volumes:
             return
 
         modality = self.view_panel.current_modality()
         axis = PLANE_AXES[plane]
         ref = self.volumes[modality]
-        axis_len = ref.shape[axis]
+        max_idx = ref.shape[axis] - 1
 
-        pv = self.plane_panels[plane]
-        idx = pv["slider"].value()
+        self.slice_slider.blockSignals(True)
+        self.slice_slider.setMaximum(max_idx)
+        self.slice_slider.setValue(max_idx // 2)
+        self.slice_slider.blockSignals(False)
 
-        display = np.take(ref, idx, axis=axis)
-        self._render(pv["image_view"], display, axis)
-        pv["slice_label"].setText(f"Slice {idx + 1} / {axis_len}  ·  {plane}")
+        self.update_view()
 
-        if plane == "Axial":
-            self._update_label(idx)
+    def update_view(self):
+        if not self.volumes:
+            return
 
-    def _update_label(self, idx):
+        plane = self.view_panel.current_plane()
+        axis = PLANE_AXES[plane]
         modality = self.view_panel.current_modality()
-        axis = PLANE_AXES["Axial"]
         ref = self.volumes[modality]
-        has_mask = self.segmentation is not None
+        axis_len = ref.shape[axis]
+        idx = self.slice_slider.value()
 
         base = np.take(ref, idx, axis=axis)
-        if has_mask:
-            display = overlay_image_with_mask(base, np.take(self.segmentation, idx, axis=axis))
-        else:
-            display = base
+        self._render(self.mri_panel["image_view"], base, axis)
 
-        self._render(self.label_view, display, axis)
+        has_mask = self.segmentation is not None
+        if has_mask:
+            overlay = overlay_image_with_mask(base, np.take(self.segmentation, idx, axis=axis))
+        else:
+            overlay = base
+        self._render(self.mask_panel["image_view"], overlay, axis)
+
+        self.mri_panel["title_label"].setText(plane)
+        self.mask_panel["title_label"].setText(f"{plane} + Mask")
+        self.slice_label.setText(f"Slice {idx + 1} / {axis_len}  ·  {plane}")
         self.legend_widget.setVisible(has_mask)
 
     def _render(self, image_view, display, axis):

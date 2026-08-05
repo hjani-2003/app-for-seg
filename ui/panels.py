@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox
 )
 
-from core.constants import MODEL_ARCHITECTURES, MODALITIES
+from core.constants import MODEL_ARCHITECTURES, MODALITIES, PLANES
 
 
 class InputPanel(QGroupBox):
@@ -53,6 +53,7 @@ class ModelPanel(QGroupBox):
 
 class ViewPanel(QGroupBox):
     changed = Signal()
+    plane_changed = Signal(str)
 
     def __init__(self):
         super().__init__("View")
@@ -60,12 +61,20 @@ class ViewPanel(QGroupBox):
         layout = QFormLayout()
         layout.setLabelAlignment(Qt.AlignRight)
 
+        self.plane_box = QComboBox()
+        self.plane_box.addItems(PLANES)
+        self.plane_box.currentTextChanged.connect(self.plane_changed)
+
         self.modality_box = QComboBox()
         self.modality_box.addItems(MODALITIES)
         self.modality_box.currentTextChanged.connect(self.changed)
 
+        layout.addRow("Plane:", self.plane_box)
         layout.addRow("Modality:", self.modality_box)
         self.setLayout(layout)
 
     def current_modality(self):
         return self.modality_box.currentText()
+
+    def current_plane(self):
+        return self.plane_box.currentText()
