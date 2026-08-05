@@ -36,9 +36,17 @@ def _polygon_area(contour):
 
 
 def _contour_points(mask, max_points):
-    contours = measure.find_contours(mask.astype(np.float32), level=0.5)
+    # skimage.measure.find_contours can't detect a 0.5-level crossing at
+    # the array edge (there's no "outside" pixel to compare against), so a
+    # lesion touching the image boundary would otherwise come back with an
+    # incomplete/open contour instead of its true closed boundary. Pad with
+    # a 1-pixel border of False on every side, then shift the returned
+    # coordinates back by that same padding.
+    padded = np.pad(mask, pad_width=1, mode="constant", constant_values=False)
+    contours = measure.find_contours(padded.astype(np.float32), level=0.5)
     if not contours:
         return None
+    contours = [contour - 1.0 for contour in contours]
 
     # A slice mask can contain more than one closed loop (e.g. a pinched
     # component, or stray noise) — take the one enclosing the largest area

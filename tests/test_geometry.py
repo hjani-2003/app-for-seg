@@ -92,3 +92,20 @@ def test_empty_mask_returns_not_measurable():
     assert not result.measurable
     assert result.major_mm == 0.0
     assert result.minor_mm == 0.0
+
+
+def test_lesion_touching_image_boundary_is_measured_not_dropped():
+    # A 20x20 square flush against the top-left edge of the array. Before
+    # padding the mask for contour extraction, skimage.measure.find_contours
+    # can't detect a 0.5-level crossing at the array edge, so this used to
+    # come back as an unmeasurable degenerate result even though it's a
+    # clean 20x20mm lesion.
+    mask = np.zeros((60, 60), dtype=bool)
+    mask[0:20, 0:20] = True
+
+    result = find_bidimensional_diameters(mask, ISO_SPACING, method="product")
+
+    assert result.measurable
+    assert result.major_line is not None
+    assert result.major_mm >= 10.0
+    assert result.minor_mm >= 10.0

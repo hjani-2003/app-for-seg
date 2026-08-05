@@ -1,12 +1,12 @@
 import numpy as np
 
-from ui.style import CLASS_LABELS
+from core.constants import LABEL_NAMES
 
-# Raw label name -> integer id in the segmentation volume. Inverted from the
-# app's existing id -> name mapping (ui/style.py:CLASS_LABELS, confirmed in
-# Phase 0 / NOTES.md), plus BG which has no legend entry there but is part
-# of the raw label scheme every backend produces (0=BG, 1=NCR, 2=ED, 3=ET).
-LABEL_IDS = {"BG": 0, **{name: label_id for label_id, name in CLASS_LABELS.items()}}
+# Raw label name -> integer id in the segmentation volume. Inverted from
+# core.constants.LABEL_NAMES, the app's canonical id -> name mapping
+# (confirmed in Phase 0 / NOTES.md). Deliberately sourced from core/, not
+# ui/ — rano_measure/ must stay free of Qt/GUI imports (Phase 4).
+LABEL_IDS = {name: label_id for label_id, name in LABEL_NAMES.items()}
 
 # Default region composition for RANO-style measurement.
 # CE region should be the enhancing tumor only (matches RANO's CE-lesion

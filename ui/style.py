@@ -1,5 +1,7 @@
 import pyqtgraph as pg
 
+from core.constants import LABEL_NAMES
+
 BACKGROUND = "#15161a"
 SURFACE = "#1c1e24"
 BORDER = "#2c2f38"
@@ -17,7 +19,7 @@ SEGMENTATION_COLORS = {
     2: "#199e70",  # ED  — edema
     3: "#c98500",  # ET  — enhancing tumor
 }
-CLASS_LABELS = {1: "NCR", 2: "ED", 3: "ET"}
+CLASS_LABELS = {label_id: name for label_id, name in LABEL_NAMES.items() if label_id != 0}
 
 # RANO bidimensional-measurement line colors, one per region type — picked
 # to stay visually distinct from SEGMENTATION_COLORS above.

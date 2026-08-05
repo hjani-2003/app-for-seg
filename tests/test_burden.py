@@ -70,3 +70,15 @@ def test_fewer_than_four_lesions_total_selects_all_of_them():
     summary = select_target_lesions(lesions)
 
     assert len(summary.target_lesions) == 2
+
+
+def test_no_lesions_for_a_region_yields_zero_sums_not_an_error():
+    # Phase 4 edge case: zero lesions found should show as an empty state
+    # with 0 sums, not raise or produce an error result.
+    summary = select_target_lesions([])
+
+    assert summary.target_lesions == []
+    assert summary.ce_target_lesions == []
+    assert summary.nonce_target_lesions == []
+    assert summary.ce_product_sum_mm2 == 0
+    assert summary.nonce_product_sum_mm2 == 0

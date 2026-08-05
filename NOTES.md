@@ -185,3 +185,62 @@ leave these implicit):
 - Manual-pair validation warnings surface via a persistent non-modal label
   in the dock, not a popup dialog — keeps "warn, don't block" from being
   disruptive.
+
+## Phase 4: edge cases + module layout
+
+**Real bug found and fixed**: a lesion touching the image boundary
+(row 0 / col 0 / last row / last col of the 2D slice) came back completely
+unmeasurable. `skimage.measure.find_contours` can't detect a 0.5-level
+crossing at the array edge (there's no "outside" pixel to compare
+against), so the returned contour for an edge-touching shape was an
+open/incomplete loop rather than its true closed boundary — and for at
+least one concrete case that degenerate contour then hit a
+round-half-to-even rounding-tie pathology in `_segment_valid` that killed
+every candidate segment outright. Fixed in `rano_measure/geometry.py`'s
+`_contour_points` by padding the mask with a 1px border of `False` before
+calling `find_contours`, then shifting the returned coordinates back by
+that padding. Covered by
+`test_geometry.py::test_lesion_touching_image_boundary_is_measured_not_dropped`
+and the equivalent full-pipeline test in `test_lesion.py`. Re-ran the
+Phase 2 real-BraTS-case validation afterward — numbers unchanged (real
+tumors in that sample aren't edge-touching), confirming no regression.
+
+**Other three edge cases were already correctly handled by the Phase 2/3
+design**, verified (not just assumed) with new tests + a UI driver script:
+- Multiple disjoint same-raw-label components (e.g. two separate ET
+  blobs) already become separate `Lesion` objects with distinct ids
+  (`ndimage.label` + per-component id assignment) — confirmed neither the
+  table nor the ROI overlay dedupe/merge/hide them, including the case
+  where two lesions share the exact same best-candidate slice_index (both
+  lesions' ROI pairs render simultaneously).
+- A component under the 10mm threshold was already returned as a `Lesion`
+  with `measurable=False` rather than dropped (`lesion.py`'s
+  `_measure_best_slice` never filters on measurability) — the table always
+  shows it, just flagged.
+- Zero lesions for a region already produces an empty table + `0.0 mm^2 (0
+  lesions)` sum labels via `select_target_lesions([])`, not an exception.
+
+**Layering bug found and fixed**: `rano_measure/regions.py` imported
+`ui.style.CLASS_LABELS` for its `LABEL_IDS` mapping (a Phase 1 decision,
+made before this "zero Qt imports in rano_measure/" constraint was
+stated) — and `ui/style.py` imports `pyqtgraph`, so `rano_measure/` was
+transitively pulling in a GUI framework. Fixed by moving the canonical
+label id↔name mapping to `core/constants.py:LABEL_NAMES` (a plain-Python
+module with no GUI deps) and having both `ui/style.py:CLASS_LABELS` and
+`rano_measure/regions.py:LABEL_IDS` derive from it. Verified with
+`grep -rn "^import\|^from" rano_measure/*.py` — zero Qt/napari/ui imports
+across all four files.
+
+**Suggested module layout — one deliberate deviation, not applied**: the
+spec's suggested layout puts the Phase 3 GUI widget at
+`rano_measure/napari_widget.py`, i.e. *inside* the pure-logic package, to
+enforce "zero napari/Qt imports outside that one file." This app's
+widget lives at `ui/rano_dock.py` instead — *outside* `rano_measure/`
+entirely, matching this codebase's existing convention of keeping all Qt
+code under `ui/` (`ui/main_window.py`, `ui/panels.py`, `ui/style.py`,
+etc.) and business logic under `core/`. This satisfies the underlying
+goal more strictly than the suggested layout would: `rano_measure/` has
+*zero* GUI imports, not just GUI imports isolated to one file within it.
+Not renaming/moving `rano_dock.py` into `rano_measure/` to match the
+suggested path, since doing so would break the codebase's own existing
+separation of concerns for no functional benefit.
