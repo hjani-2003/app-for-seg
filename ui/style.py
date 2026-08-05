@@ -11,8 +11,7 @@ ACCENT_PRESSED = "#4a78d1"
 DISABLED_BG = "#25272e"
 DISABLED_TEXT = "#5a5e68"
 
-# Per-class segmentation colors — dark-mode categorical slots 1-3 (blue, aqua,
-# yellow), used in fixed order so each class keeps a stable, CVD-safe hue.
+# Per-class segmentation colors — dark-mode categorical slots 1-3 (blue, aqua, yellow), used in fixed order so each class keeps a stable, CVD-safe hue.
 SEGMENTATION_COLORS = {
     1: "#3987e5",  # NCR — necrotic core
     2: "#199e70",  # ED  — edema

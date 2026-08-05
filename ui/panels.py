@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox
 )
 
-from core.constants import MODEL_ARCHITECTURES, MODALITIES, VIEW_MODES, PLANES
+from core.constants import MODEL_ARCHITECTURES, MODALITIES
 
 
 class InputPanel(QGroupBox):
@@ -64,24 +64,8 @@ class ViewPanel(QGroupBox):
         self.modality_box.addItems(MODALITIES)
         self.modality_box.currentTextChanged.connect(self.changed)
 
-        self.plane_box = QComboBox()
-        self.plane_box.addItems(PLANES)
-        self.plane_box.currentTextChanged.connect(self.changed)
-
-        self.view_box = QComboBox()
-        self.view_box.addItems(VIEW_MODES)
-        self.view_box.currentTextChanged.connect(self.changed)
-
         layout.addRow("Modality:", self.modality_box)
-        layout.addRow("Plane:", self.plane_box)
-        layout.addRow("Display:", self.view_box)
         self.setLayout(layout)
 
     def current_modality(self):
         return self.modality_box.currentText()
-
-    def current_plane(self):
-        return self.plane_box.currentText()
-
-    def current_view(self):
-        return self.view_box.currentText()

@@ -33,8 +33,9 @@ def _import_mambavision_unet():
         from src.mambaVisionUNet import MambaVisionUNet
     except ImportError as exc:
         raise ModelUnavailableError(
-            "MambaVision requires the mamba_ssm / causal_conv1d CUDA kernels "
-            "(GPU-only, no CPU fallback) which aren't installed in this environment."
+            f"MambaVision failed to import ({exc}). It needs the mamba_ssm CUDA "
+            "kernels (GPU-only, no CPU fallback) — check that mamba_ssm was built "
+            "against this environment's torch/CUDA version."
         ) from exc
     finally:
         if inserted:
