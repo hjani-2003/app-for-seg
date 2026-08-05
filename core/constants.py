@@ -10,12 +10,14 @@ MODALITIES = ["T1", "T1Gd", "T2", "FLAIR"]
 
 MODEL_ARCHITECTURES = ["SwinUNETR", "MaViN", "nnUnet"]
 
+VIEW_MODES = ["Image", "Mask", "Image + Mask"]
+
 # array axis 0/1/2 correspond to sagittal/coronal/axial.
 PLANES = ["Axial", "Coronal", "Sagittal"]
 
 PLANE_AXES = {
-    "Axial": 2, 
-    "Coronal": 1, 
+    "Axial": 2,
+    "Coronal": 1,
     "Sagittal": 0
 }
 
