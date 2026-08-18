@@ -9,6 +9,7 @@ from core.constants import MODEL_ARCHITECTURES, MODALITIES, PLANES
 
 class InputPanel(QGroupBox):
     load_requested = Signal()
+    save_requested = Signal()
 
     def __init__(self):
         super().__init__("Input")
@@ -17,9 +18,17 @@ class InputPanel(QGroupBox):
         self.load_btn = QPushButton("Load BraTS Folder")
         self.load_btn.clicked.connect(self.load_requested)
 
+        self.save_btn = QPushButton("Save Segmentation")
+        self.save_btn.setEnabled(False)
+        self.save_btn.clicked.connect(self.save_requested)
+
         layout.addWidget(self.load_btn)
+        layout.addWidget(self.save_btn)
         layout.addStretch()
         self.setLayout(layout)
+
+    def set_save_enabled(self, enabled):
+        self.save_btn.setEnabled(enabled)
 
 
 class ModelPanel(QGroupBox):
