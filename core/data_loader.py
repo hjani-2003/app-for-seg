@@ -41,3 +41,16 @@ def load_brats_folder(folder):
 def normalize_for_display(volume):
     vmin, vmax = volume.min(), volume.max()
     return (volume - vmin) / (vmax - vmin + 1e-6)
+
+
+def save_segmentation(mask, reference_path, out_path):
+    """Write a segmentation mask to out_path as a .nii.gz.
+
+    The mask is in RAS+ canonical space (see load_brats_folder), so the
+    geometry is taken from the canonical form of reference_path — one of
+    the case's modality files — rather than its on-disk affine.
+    """
+    ref = nib.as_closest_canonical(nib.load(reference_path))
+    img = nib.Nifti1Image(mask.astype(np.uint8), ref.affine)
+    img.header.set_xyzt_units(*ref.header.get_xyzt_units())
+    nib.save(img, out_path)

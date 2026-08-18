@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
@@ -6,8 +8,8 @@ from PySide6.QtWidgets import (
     QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel
 )
 
-from core.constants import PLANE_AXES
-from core.data_loader import load_brats_folder, normalize_for_display
+from core.constants import MODALITIES, PLANE_AXES
+from core.data_loader import load_brats_folder, normalize_for_display, save_segmentation
 from core.inference import InferenceWorker
 from ui.mask_render import overlay_image_with_mask
 from ui.panels import InputPanel, ModelPanel, ViewPanel
@@ -24,6 +26,7 @@ class MRIViewer(QMainWindow):
         self.volumes = {}
         self.spacing = None
         self.paths = {}
+        self.case_folder = None
         self.segmentation = None
         self.worker = None
 
@@ -41,6 +44,7 @@ class MRIViewer(QMainWindow):
 
         self.input_panel = InputPanel()
         self.input_panel.load_requested.connect(self.load_folder)
+        self.input_panel.save_requested.connect(self.save_folder)
 
         self.model_panel = ModelPanel()
         self.model_panel.run_requested.connect(self.run_inference)
@@ -156,14 +160,18 @@ class MRIViewer(QMainWindow):
             self.volumes = {}
             self.spacing = None
             self.paths = {}
+            self.case_folder = None
             self.segmentation = None
+            self.input_panel.set_save_enabled(False)
             self.slice_slider.setEnabled(False)
             self.status.showMessage(str(exc))
             self._refresh_run_enabled()
             return
 
         self.volumes = {m: normalize_for_display(v) for m, v in self.raw_volumes.items()}
+        self.case_folder = folder
         self.segmentation = None
+        self.input_panel.set_save_enabled(False)
 
         modality = self.view_panel.current_modality()
         axis = PLANE_AXES[self.view_panel.current_plane()]
@@ -178,6 +186,28 @@ class MRIViewer(QMainWindow):
         self.status.showMessage(f"Loaded case from {folder}")
         self._refresh_run_enabled()
         self.update_view()
+
+    def save_folder(self):
+        if self.segmentation is None:
+            self.status.showMessage("Run inference before saving")
+            return
+
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory"
+        )
+        if not directory:
+            return
+
+        case_name = os.path.basename(os.path.normpath(self.case_folder))
+        out_path = os.path.join(directory, f"{case_name}_seg.nii.gz")
+
+        try:
+            save_segmentation(self.segmentation, self.paths[MODALITIES[0]], out_path)
+        except Exception as exc:
+            self.status.showMessage(f"Save failed: {exc}")
+            return
+
+        self.status.showMessage(f"Saved segmentation to {out_path}")
 
     def _refresh_run_enabled(self):
         has_case = len(self.raw_volumes) == 4
@@ -201,6 +231,7 @@ class MRIViewer(QMainWindow):
 
     def on_inference_done(self, mask, info):
         self.segmentation = mask
+        self.input_panel.set_save_enabled(True)
         self.progress_bar.setVisible(False)
         self.status.showMessage(f"Inference completed ({info})")
         self._refresh_run_enabled()
