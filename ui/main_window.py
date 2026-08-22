@@ -355,13 +355,23 @@ class MRIViewer(QMainWindow):
     def _refresh_run_enabled(self):
         has_case = len(self.raw_volumes) == 4
         self.model_panel.set_run_enabled(has_case)
-        self.synthseg_panel.set_run_enabled(
-            has_case
-            and self.synthseg_unavailable is None
+
+        # Re-checked rather than cached from start-up, so installing the env or
+        # the weights takes effect without restarting the app.
+        self.synthseg_unavailable = synthseg_backend.check_available()
+
+        if self.synthseg_unavailable is not None:
+            reason = self.synthseg_unavailable
+        elif not has_case:
+            reason = "Load a BraTS case first"
+        elif self.synthseg_running:
             # Loading a case calls this, so without the in-flight check a user
             # could start a second run on top of one already going.
-            and not self.synthseg_running
-        )
+            reason = "A SynthSeg run is already in progress"
+        else:
+            reason = None
+
+        self.synthseg_panel.set_run_enabled(reason is None, reason)
 
     def run_inference(self):
         if len(self.raw_volumes) != 4:

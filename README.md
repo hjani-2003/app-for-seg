@@ -243,8 +243,19 @@ conda activate synthseg_38
 pip install -r models/synthseg/requirements_python3.8.txt
 ```
 
+**`models/` is gitignored, so neither the code nor the weights travel with
+`git clone` or `git pull`.** Moving this branch to another machine means
+copying `models/synthseg/` across by hand (rsync/scp) and creating the
+`synthseg_38` env there — the most common reason Run SynthSeg is greyed out on
+a fresh machine.
+
 If the app cannot find either piece, the **Run SynthSeg** button stays
-disabled and the status bar says which piece is missing.
+disabled and hovering it names the missing piece. Availability is re-checked
+whenever a case is loaded, so installing the env or the weights takes effect
+without restarting the app.
+
+To diagnose from the shell, run `python check_synthseg.py` from the repo root;
+it prints every path it looks for and whether it was found.
 
 ### Environment overrides
 

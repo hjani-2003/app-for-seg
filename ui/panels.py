@@ -198,5 +198,12 @@ class SynthSegPanel(QGroupBox):
             "parc": self.parc_check.isChecked(),
         }
 
-    def set_run_enabled(self, enabled):
+    def set_run_enabled(self, enabled, reason=None):
+        """Enable the button, or disable it and explain why on hover.
+
+        The reason previously went to the status bar at start-up only, where
+        the next message overwrote it — leaving a greyed-out button with no
+        recoverable explanation of what was missing.
+        """
         self.run_btn.setEnabled(enabled)
+        self.run_btn.setToolTip("" if enabled else (reason or ""))
