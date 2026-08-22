@@ -48,6 +48,7 @@ class MRIViewer(QMainWindow):
         self.synthseg_mask = None
         self.synthseg_result = None
         self.synthseg_worker = None
+        self.synthseg_running = False
 
         apply_pg_theme()
         self._build_ui()
@@ -353,7 +354,11 @@ class MRIViewer(QMainWindow):
         has_case = len(self.raw_volumes) == 4
         self.model_panel.set_run_enabled(has_case)
         self.synthseg_panel.set_run_enabled(
-            has_case and self.synthseg_unavailable is None
+            has_case
+            and self.synthseg_unavailable is None
+            # Loading a case calls this, so without the in-flight check a user
+            # could start a second run on top of one already going.
+            and not self.synthseg_running
         )
 
     def run_inference(self):
@@ -396,6 +401,7 @@ class MRIViewer(QMainWindow):
         modality = self.synthseg_panel.current_modality()
         options = self.synthseg_panel.options()
 
+        self.synthseg_running = True
         self.synthseg_panel.set_run_enabled(False)
         self.progress_bar.setVisible(True)
         self.status.showMessage(f"Running SynthSeg on {modality}...")
@@ -403,7 +409,11 @@ class MRIViewer(QMainWindow):
         # SynthSeg reads and writes in the file's own space, so it gets the
         # original path rather than the reoriented array the viewer holds.
         self.synthseg_worker = SynthSegWorker(
-            self.paths[modality], self.volumes[modality].shape, modality, options
+            self.paths[modality],
+            self.volumes[modality].shape,
+            modality,
+            options,
+            self.case_folder,
         )
         self.synthseg_worker.finished.connect(self.on_synthseg_done)
         self.synthseg_worker.failed.connect(self.on_synthseg_failed)
@@ -411,10 +421,22 @@ class MRIViewer(QMainWindow):
         self.synthseg_worker.start()
 
     def on_synthseg_done(self, mask, result):
+        self.synthseg_running = False
+        self.progress_bar.setVisible(False)
+
+        # A run takes minutes; if the case was swapped meanwhile this mask
+        # belongs to the old one and must not be shown or saved against the
+        # new case's images and affine.
+        if self.sender() is not None and self.sender().case_folder != self.case_folder:
+            self.status.showMessage(
+                "Discarded SynthSeg result — the case changed while it was running"
+            )
+            self._refresh_run_enabled()
+            return
+
         self.synthseg_mask = mask
         self.synthseg_result = result
         self.input_panel.set_save_synthseg_enabled(True)
-        self.progress_bar.setVisible(False)
 
         self.view_panel.update_overlay_availability(self.segmentation is not None, True)
         self.view_panel.set_overlay(
@@ -426,6 +448,7 @@ class MRIViewer(QMainWindow):
         self.update_view()
 
     def on_synthseg_failed(self, message):
+        self.synthseg_running = False
         self.progress_bar.setVisible(False)
         self.status.showMessage(message)
         self._refresh_run_enabled()

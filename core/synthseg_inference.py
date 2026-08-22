@@ -17,12 +17,16 @@ class SynthSegWorker(QThread):
     failed = Signal(str)
     progress = Signal(str)
 
-    def __init__(self, image_path, reference_shape, modality, options):
+    def __init__(self, image_path, reference_shape, modality, options, case_folder):
         super().__init__()
         self.image_path = image_path
         self.reference_shape = reference_shape
         self.modality = modality
         self.options = options
+        # Which case this run belongs to. A SynthSeg run takes minutes, long
+        # enough for the user to load a different case meanwhile, and the
+        # result must not then be applied to that other case.
+        self.case_folder = case_folder
 
     def run(self):
         try:
