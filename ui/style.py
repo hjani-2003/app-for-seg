@@ -92,6 +92,40 @@ QLabel {{
     color: {TEXT};
 }}
 
+QCheckBox {{
+    color: {TEXT};
+    spacing: 6px;
+}}
+
+QCheckBox::indicator {{
+    width: 13px;
+    height: 13px;
+    border: 1px solid {BORDER};
+    border-radius: 3px;
+    background-color: {BACKGROUND};
+}}
+
+QCheckBox::indicator:hover {{
+    border-color: {ACCENT};
+}}
+
+QCheckBox::indicator:checked {{
+    background-color: {ACCENT};
+    border-color: {ACCENT};
+    /* A checkmark glyph would need an image asset, so a filled inset box
+       marks the checked state instead. */
+    image: none;
+}}
+
+QCheckBox::indicator:disabled {{
+    background-color: {DISABLED_BG};
+    border-color: {DISABLED_BG};
+}}
+
+QCheckBox:disabled {{
+    color: {DISABLED_TEXT};
+}}
+
 QSlider::groove:horizontal {{
     height: 4px;
     background: {BORDER};

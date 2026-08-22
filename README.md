@@ -14,6 +14,7 @@ with a color-coded tumor sub-region overlay.
 - [Running the app](#running-the-app)
 - [Using the viewer](#using-the-viewer)
 - [Model backends](#model-backends)
+- [SynthSeg](#synthseg)
 - [Checkpoints](#checkpoints)
 - [Troubleshooting](#troubleshooting)
 
@@ -31,21 +32,25 @@ app-for-seg/
 │   ├── preprocessing.py            # z-score-over-nonzero-voxels normalization (matches training)
 │   ├── inference.py                # InferenceWorker (QThread): dispatches to a backend, runs
 │   │                                #   sliding-window inference, reports mask or error
+│   ├── synthseg_inference.py       # SynthSegWorker (QThread): runs SynthSeg, streams progress
 │   └── backends/
 │       ├── swin_unetr_backend.py    # builds MONAI SwinUNETR from models/swin_unetr/configs
-│       ├── mambavision_backend.py   # builds MambaVision-UNet from models/mavin-hpc/src (GPU only)
-│       ├── nnunet_backend.py        # stub — see "Model backends" below
+│       ├── mavin_backend.py         # builds MambaVision-UNet from models/mavin-hpc/src (GPU only)
+│       ├── nnunet_backend.py        # nnUNetv2 predictor over the raw modality files
+│       ├── synthseg_backend.py      # SynthSeg via subprocess — see "SynthSeg" below
 │       ├── checkpoints.py           # find_checkpoint(): looks in models/<name>/checkpoints/*.pth
 │       └── errors.py                # ModelUnavailableError
 ├── ui/
 │   ├── main_window.py               # MRIViewer — wires panels together, load/run/view logic
-│   ├── panels.py                    # InputPanel, ModelPanel, ViewPanel (QGroupBox widgets)
+│   ├── panels.py                    # InputPanel, ModelPanel, SynthSegPanel, ViewPanel
 │   ├── style.py                     # dark theme QSS + segmentation class colors
-│   └── mask_render.py               # colorize_mask() / overlay_image_with_mask()
+│   ├── synthseg_lut.py              # FreeSurfer label names/colors for the SynthSeg overlay
+│   └── mask_render.py               # colorize_mask() / overlay_image_with_masks()
 └── models/                          # training repos for each architecture (see each GUIDE.md)
     ├── swin_unetr/
     ├── mavin-hpc/                   # MambaVision
-    └── nnUnet/
+    ├── nnUnet/
+    └── synthseg/                    # vendored SynthSeg + weights (not in git)
 ```
 
 The `models/*` directories are separate training pipelines (each has its own
@@ -139,9 +144,8 @@ This opens the viewer window. No arguments, no config files to edit first.
    (e.g. `Missing modalities in folder: T2, FLAIR`) and nothing else changes.
    On success the slice slider activates, centered on the middle slice.
 
-2. **Architecture** (Model panel) — pick `SwinUNETR`, `MambaVision`, or
-   `nnU-Net`. Selecting `nnU-Net` disables **Run Inference** immediately and
-   explains why in the status bar (see [Model backends](#model-backends)).
+2. **Architecture** (Model panel) — pick `SwinUNETR`, `MaViN`, or `nnUnet`
+   (see [Model backends](#model-backends)).
 
 3. **Run Inference** — enabled once a valid case is loaded and the selected
    architecture is available. Runs on a background thread (the window stays
@@ -149,20 +153,34 @@ This opens the viewer window. No arguments, no config files to edit first.
    while it runs). When it finishes, the status bar reports either the
    checkpoint file used or that it ran with random weights.
 
-4. **Modality** / **Display** (View panel) — `Modality` picks which of the 4
-   loaded volumes to show; `Display` picks `Image`, `Mask`, or `Image + Mask`.
-   The two mask modes only do anything once inference has produced a result.
+4. **Run SynthSeg** (SynthSeg panel) — whole-brain anatomical segmentation of
+   a single scan, independent of the tumour model. See
+   [SynthSeg](#synthseg) below.
 
-5. **Slice slider** — scrubs through the volume along its first axis.
+5. **Plane** / **Modality** / **Overlay** (View panel) — `Plane` picks
+   axial/coronal/sagittal for both panels at once; `Modality` picks which of
+   the 4 loaded volumes to show; `Overlay` picks what the right-hand panel
+   draws on top — `Tumor`, `SynthSeg`, or `Both`. Modes whose mask has not
+   been produced yet are greyed out.
 
-6. **Legend** — appears above the image whenever a mask view is showing a
-   real segmentation. Colors are fixed per class:
+   The window shows two synced panels: the raw slice on the left, the same
+   slice with the selected overlay on the right. In `Both`, SynthSeg is drawn
+   underneath at a lower alpha so the tumour mask stays readable on top.
+
+6. **Slice slider** — scrubs through the volume along the selected plane's
+   axis.
+
+7. **Legend** — appears above the images and lists whatever the overlay is
+   currently showing. Tumour colors are fixed per class:
 
    | Class | Meaning | Color |
    |---|---|---|
    | NCR | Necrotic core | blue |
    | ED | Edema | aqua/green |
    | ET | Enhancing tumor | yellow/orange |
+
+   SynthSeg entries list only the structures present in that case, using the
+   canonical FreeSurfer colors.
 
 ---
 
@@ -173,8 +191,12 @@ The three dropdown options map to the three `models/` training repos:
 | Architecture | Backing repo | Status |
 |---|---|---|
 | **SwinUNETR** | `models/swin_unetr` | Fully wired. Runs on CPU or GPU. |
-| **MambaVision** | `models/mavin-hpc` | Fully wired, **GPU only** — the mamba_ssm CUDA kernels have no CPU fallback. On a machine without them, selecting it and running produces a clear status-bar error instead of a crash. |
-| **nnU-Net** | `models/nnUnet` | Stubbed. nnU-Net needs a full trained *results folder* (`plans.json` + `dataset.json` + fold checkpoints from `nnUNetv2_train`), not just a weights file, so it can't be pointed at a single checkpoint the way the other two can. Wiring this up is future work — see `models/nnUnet/GUIDE.md` for its own training/predict pipeline in the meantime. |
+| **MaViN** | `models/mavin-hpc` | Fully wired, **GPU only** — the mamba_ssm CUDA kernels have no CPU fallback. On a machine without them, selecting it and running produces a clear status-bar error instead of a crash. |
+| **nnUnet** | `models/nnUnet` | Fully wired. Unlike the other two it needs a trained *results folder* (`plans.json` + `dataset.json` + `fold_0/checkpoint_best.pth` from `nnUNetv2_train`) at `models/nnunet/results/Dataset001_BraTS/nnUNetTrainer__nnUNetPlans__3d_fullres`, and it reads the original NIfTI files directly rather than the preloaded arrays, because it does its own preprocessing from `plans.json`. |
+
+SynthSeg is deliberately *not* in this dropdown: it segments healthy anatomy
+from one scan rather than tumour from four, so it is a separate control with
+its own overlay layer.
 
 For SwinUNETR and MambaVision, the viewer:
 1. Builds the architecture from `models/<name>/configs/model.yaml`.
@@ -189,6 +211,104 @@ For SwinUNETR and MambaVision, the viewer:
    `models/<name>/configs/train.yaml`.
 5. Argmaxes the 4-class softmax output into an integer mask
    (0=background, 1=NCR, 2=ED, 3=ET).
+
+## SynthSeg
+
+[SynthSeg](https://github.com/BBillot/SynthSeg) segments whole-brain anatomy
+(33 FreeSurfer `aseg` structures, optionally 68 Desikan-Killiany cortical
+parcels) from a **single** scan. It is orthogonal to the tumour models, so it
+gets its own panel, its own overlay layer, and its own save button.
+
+### Why it runs in a separate process
+
+SynthSeg needs Python 3.8 + `tensorflow==2.2.0` + `Keras==2.3.1` +
+`numpy==1.23.5`. The viewer needs Python ≥3.10 + torch + nnunetv2 + numpy 2.x.
+These cannot share an interpreter — TF 2.2 wheels stop at Python 3.8, and
+PySide6/nnunetv2 require ≥3.9. So `core/backends/synthseg_backend.py` invokes
+SynthSeg's own CLI in its own conda env and communicates over files, which is
+exactly what that CLI is designed for. Nothing is imported in-process.
+
+### Setup
+
+```bash
+# 1. The code and weights, under models/synthseg/ (gitignored — copy manually)
+#    From a SynthSeg checkout, you need:
+#      SynthSeg/  ext/  scripts/  models/*.h5  data/labels_classes_priors/
+#    The five .h5 files are ~400 MB total and are gitignored upstream too,
+#    so they will not arrive via `git clone` — copy models/ explicitly.
+
+# 2. Its interpreter
+conda create -n synthseg_38 python=3.8 -y
+conda activate synthseg_38
+pip install -r models/synthseg/requirements_python3.8.txt
+```
+
+If the app cannot find either piece, the **Run SynthSeg** button stays
+disabled and the status bar says which piece is missing.
+
+### Environment overrides
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SYNTHSEG_PYTHON` | `~/miniconda3/envs/synthseg_38/bin/python` | Interpreter to run SynthSeg with. |
+| `SYNTHSEG_HOME` | `models/synthseg` | Where the SynthSeg code and weights live. |
+| `SYNTHSEG_THREADS` | `1` | TensorFlow intra/inter-op threads. **See the memory note below before raising this.** |
+| `SYNTHSEG_CROP` | auto | Space-separated per-axis patch size, e.g. `160 192 160`. Overrides the automatic crop. |
+| `SYNTHSEG_GPU` | unset | Set to `1` to drop `--cpu`. Needs a TF-2.2-compatible CUDA 10.1 stack. |
+| `SYNTHSEG_LUT` | unset | Path to a real `FreeSurferColorLUT.txt`, used for overlay colors if present. |
+
+### Memory: why one thread
+
+TensorFlow 2.2's multi-threaded `Conv3D` allocates a workspace buffer per
+intra-op thread. At a full-brain patch those buffers overflow available memory
+and the process aborts with `std::bad_alloc` — reproduced at both 2 and 4
+threads on a 16 GB machine. At 1 thread the run peaks around 3.9 GB and takes
+about a minute for a BraTS volume, so 1 is the default. Raise
+`SYNTHSEG_THREADS` only if you have memory to spare.
+
+The backend also shrinks the analysed patch per-axis to whatever actually
+contains the brain (`auto_crop`), instead of SynthSeg's fixed 192³. SynthSeg
+crops around the *image* centre after reorienting to RAS+, so the patch is
+sized from the brain's furthest voxel from that centre, then rounded up to a
+multiple of 32 by SynthSeg itself. For BraTS this cuts the analysed volume by
+roughly a third with no clipping.
+
+### Options
+
+| Option | Effect |
+|---|---|
+| **Modality** | Which loaded volume to segment. Defaults to `T1`, which is what SynthSeg is trained and validated on; it is contrast-agnostic by design, so other modalities work but are less validated. |
+| **Fast** | Skips topology postprocessing. Roughly twice as fast, marginally less accurate. |
+| **Robust** | Uses the robust model — better on low-quality clinical scans, slower. Implies Fast (SynthSeg forces it), so the Fast box locks on. |
+| **Parcellation** | Also parcellates the cortex into 68 Desikan-Killiany regions. Cortex labels 3/42 are *replaced* by labels 1001–1035 / 2001–2035, and the volumes CSV gains 68 columns. |
+
+### Saved outputs
+
+**Save SynthSeg** asks for a directory and writes three files. The modality is
+in the name because SynthSeg can be run on any loaded modality, and a `_parc`
+infix is added for parcellated runs, because that is a different label space —
+neither should silently overwrite the other:
+
+```
+<case>_synthseg_<modality>[_parc].nii.gz          # int16, FreeSurfer labels, RAS+ canonical
+<case>_synthseg_<modality>[_parc]_volumes.csv     # header + 1 row, per-structure volumes in mm3
+<case>_synthseg_<modality>[_parc]_qc.csv          # header + 1 row, per-region QC scores in [0,1]
+```
+
+e.g. `BraTS-GoAT-00000_synthseg_t1n.nii.gz`. The `.nii.gz` is written with the
+affine of the modality SynthSeg ran on, taken from its canonical form so it
+matches the mask the viewer displays. The existing **Save Segmentation**
+button is untouched and still writes `<case>_seg.nii.gz` for the tumour model.
+
+### Colors
+
+SynthSeg ships no color table — its `data/labels table.txt` says the color of
+each structure is left to the viewer. `ui/synthseg_lut.py` therefore vendors
+the canonical FreeSurfer `aseg` colors, so the overlay matches what freeview
+and ITK-SNAP show. Cortical parcels (only present with **Parcellation**) get a
+generated palette instead of the canonical one. Point `SYNTHSEG_LUT` at a real
+`FreeSurferColorLUT.txt` and every label, parcels included, uses its canonical
+color.
 
 ## Checkpoints
 
@@ -216,9 +336,15 @@ viewer just runs with random weights and says so in the status bar.
   without a CUDA GPU, or the kernels aren't installed. See
   [Optional: enabling MambaVision](#optional-enabling-mambavision). There is
   no CPU fallback; this isn't a bug in the viewer.
-- **nnU-Net's Run Inference is greyed out** — expected, see
-  [Model backends](#model-backends). Use `models/nnUnet`'s own scripts to
-  train/predict until it's wired into the viewer.
+- **"nnUNet results folder not found at ..."** — nnUNet needs a trained
+  results folder, not a single checkpoint. See
+  [Model backends](#model-backends).
+- **"SynthSeg interpreter not found" / "SynthSeg not found" / "SynthSeg
+  weights missing"** — one of the two setup pieces is missing. See
+  [SynthSeg → Setup](#setup-1), or set `SYNTHSEG_PYTHON` / `SYNTHSEG_HOME`.
+- **"SynthSeg produced no segmentation"** followed by `std::bad_alloc` — it
+  ran out of memory. Make sure `SYNTHSEG_THREADS` is not set above 1, and see
+  [Memory: why one thread](#memory-why-one-thread).
 - **Inference is slow** — on CPU, a single sliding-window pass at the
   configured ROI (128³ by default) can take well over a minute depending on
   the machine; this is expected without a GPU.

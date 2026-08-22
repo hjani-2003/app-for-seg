@@ -54,3 +54,16 @@ def save_segmentation(mask, reference_path, out_path):
     img = nib.Nifti1Image(mask.astype(np.uint8), ref.affine)
     img.header.set_xyzt_units(*ref.header.get_xyzt_units())
     nib.save(img, out_path)
+
+
+def save_label_map(mask, reference_path, out_path):
+    """Write a multi-label segmentation to out_path as a .nii.gz.
+
+    Like save_segmentation, but keeps the label values intact: FreeSurfer aseg
+    labels reach 60 and SynthSeg's cortical parcels reach 2035, so uint8 would
+    silently wrap them.
+    """
+    ref = nib.as_closest_canonical(nib.load(reference_path))
+    img = nib.Nifti1Image(mask.astype(np.int16), ref.affine)
+    img.header.set_xyzt_units(*ref.header.get_xyzt_units())
+    nib.save(img, out_path)
