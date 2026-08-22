@@ -252,10 +252,39 @@ disabled and the status bar says which piece is missing.
 |---|---|---|
 | `SYNTHSEG_PYTHON` | `~/miniconda3/envs/synthseg_38/bin/python` | Interpreter to run SynthSeg with. |
 | `SYNTHSEG_HOME` | `models/synthseg` | Where the SynthSeg code and weights live. |
-| `SYNTHSEG_THREADS` | `1` | TensorFlow intra/inter-op threads. **See the memory note below before raising this.** |
+| `SYNTHSEG_THREADS` | 1 under 32 GB RAM, else `min(8, cores/2)` | TensorFlow intra/inter-op threads. **See the memory note below before raising this.** |
 | `SYNTHSEG_CROP` | auto | Space-separated per-axis patch size, e.g. `160 192 160`. Overrides the automatic crop. |
-| `SYNTHSEG_GPU` | unset | Set to `1` to drop `--cpu`. Needs a TF-2.2-compatible CUDA 10.1 stack. |
+| `SYNTHSEG_GPU` | auto-detected | `1` forces the GPU on, `0` forces it off. See the GPU note below. |
 | `SYNTHSEG_LUT` | unset | Path to a real `FreeSurferColorLUT.txt`, used for overlay colors if present. |
+
+### GPU support: compute capability 7.5 or lower
+
+TensorFlow 2.2 ships CUDA 10.1 kernels. Its `.so` files carry code for
+`sm_35 ... sm_75` and nothing above, so it can only use cards at **compute
+capability 7.5 or lower**:
+
+| Works | Does not work |
+|---|---|
+| P100 (6.0), V100 (7.0), T4 (7.5), RTX 20xx (7.5) | A100 (8.0), RTX 30xx (8.6), RTX 40xx (8.9), H100 (9.0) |
+
+Ampere and newer need CUDA 11+, which stock TF 2.2 has no kernels for. The
+backend detects this with `nvidia-smi` and falls back to CPU rather than
+failing, and the status bar says which mode it picked and why — that fallback
+would otherwise be silent, turning a seconds-long run into a minutes-long one
+with no explanation.
+
+Check the target machine with:
+
+```bash
+nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
+```
+
+If the card is 8.0 or newer, the options are: run on CPU (fine — with enough
+RAM the thread default scales up and a BraTS volume takes a couple of
+minutes), or port SynthSeg to a newer TensorFlow. The latter is real work, not
+a config change: SynthSeg 2.0 imports standalone `Keras 2.3.1`
+(`import keras.layers as KL`), which does not work against TF 2.4+ where Keras
+moved inside `tf.keras`.
 
 ### Memory: why one thread
 
@@ -263,8 +292,12 @@ TensorFlow 2.2's multi-threaded `Conv3D` allocates a workspace buffer per
 intra-op thread. At a full-brain patch those buffers overflow available memory
 and the process aborts with `std::bad_alloc` — reproduced at both 2 and 4
 threads on a 16 GB machine. At 1 thread the run peaks around 3.9 GB and takes
-about a minute for a BraTS volume, so 1 is the default. Raise
-`SYNTHSEG_THREADS` only if you have memory to spare.
+about a minute for a BraTS volume.
+
+The default therefore scales with the machine rather than being pinned to the
+smallest box it ran on: 1 thread under 32 GB of RAM, otherwise
+`min(8, cores/2)`. `SYNTHSEG_THREADS` overrides it either way. If a larger
+machine still aborts with `std::bad_alloc`, lower it.
 
 The backend also shrinks the analysed patch per-axis to whatever actually
 contains the brain (`auto_crop`), instead of SynthSeg's fixed 192³. SynthSeg

@@ -127,7 +127,9 @@ class MRIViewer(QMainWindow):
         # Surface a broken SynthSeg install now rather than after a user has
         # loaded a case and waited on a run that could never start.
         self.synthseg_unavailable = synthseg_backend.check_available()
-        self.status.showMessage(self.synthseg_unavailable or "Ready")
+        self.status.showMessage(
+            self.synthseg_unavailable or f"Ready · {synthseg_backend.runtime_summary()}"
+        )
 
     def _build_panel(self, title):
         container = QWidget()
@@ -404,7 +406,10 @@ class MRIViewer(QMainWindow):
         self.synthseg_running = True
         self.synthseg_panel.set_run_enabled(False)
         self.progress_bar.setVisible(True)
-        self.status.showMessage(f"Running SynthSeg on {modality}...")
+        self.status.showMessage(
+            f"Running SynthSeg on {modality}... "
+            f"({synthseg_backend.runtime_summary()})"
+        )
 
         # SynthSeg reads and writes in the file's own space, so it gets the
         # original path rather than the reoriented array the viewer holds.

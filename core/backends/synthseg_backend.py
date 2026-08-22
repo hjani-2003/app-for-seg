@@ -40,17 +40,21 @@ _OPTION_WEIGHTS = {
     "parc": "synthseg_parc_2.0.h5",
 }
 
-# No GPU is assumed: TF 2.2 needs CUDA 10.1, which does not coexist with the
-# CUDA 12 torch build in the app env. Set SYNTHSEG_GPU=1 to drop --cpu.
-_USE_GPU = os.environ.get("SYNTHSEG_GPU") == "1"
+# TensorFlow 2.2 ships CUDA 10.1 kernels compiled for compute capability 7.5
+# and below (checked with `strings` over its .so files: sm_35 ... sm_75). An
+# Ampere or newer card — A100 sm_80, RTX 30xx sm_86, RTX 40xx sm_89, H100
+# sm_90 — needs CUDA 11+, so TF 2.2 cannot use it at all and must fall back to
+# CPU. SYNTHSEG_GPU=1 forces the GPU on, =0 forces it off.
+MAX_COMPUTE_CAPABILITY = 7.5
 
-# One thread on purpose. TensorFlow 2.2's multi-threaded Conv3D allocates a
-# workspace buffer per intra-op thread, and at a full-brain crop those buffers
-# overflow available memory and abort the process with std::bad_alloc — this
-# was reproduced at 2 and 4 threads on a 16 GB machine, while 1 thread peaks at
-# ~3.9 GB and finishes a BraTS volume in under a minute. Raise SYNTHSEG_THREADS
-# on a machine with memory to spare.
-DEFAULT_THREADS = int(os.environ.get("SYNTHSEG_THREADS") or 1)
+# Multi-threaded Conv3D in TF 2.2 allocates a workspace buffer per intra-op
+# thread. On a 16 GB machine those overflow memory at a full-brain crop and
+# abort the process with std::bad_alloc (reproduced at 2 and 4 threads; 1
+# thread peaks at ~3.9 GB and takes about a minute). Machines with real memory
+# headroom can afford more, so the default scales rather than being pinned to
+# the smallest box this ran on. SYNTHSEG_THREADS overrides.
+_THREAD_HEADROOM_GB = 32
+_MAX_AUTO_THREADS = 8
 
 # SynthSeg analyses a centred patch, 192 on every axis by default. Patch size
 # drives peak memory, so it is instead shrunk per-axis to whatever actually
@@ -61,6 +65,65 @@ MAX_CROP = 192
 _CROP_MARGIN = 8
 
 _LOG_TAIL = 25
+
+
+def _total_ram_gb():
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def detect_gpu():
+    """Return (usable, description) for the local GPU, without importing TF.
+
+    TF 2.2 would take tens of seconds to import just to answer this, and it is
+    needed before every run, so nvidia-smi is asked instead.
+    """
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,compute_cap", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False, "no NVIDIA GPU detected"
+
+    if out.returncode != 0 or not out.stdout.strip():
+        return False, "no NVIDIA GPU detected"
+
+    name, _, cap = out.stdout.strip().splitlines()[0].partition(",")
+    name, cap = name.strip(), cap.strip()
+
+    # compute_cap needs a reasonably recent driver; without it the card cannot
+    # be vetted, so the safe answer is CPU.
+    try:
+        capability = float(cap)
+    except ValueError:
+        return False, f"{name} (driver did not report compute capability)"
+
+    if capability > MAX_COMPUTE_CAPABILITY:
+        return False, (
+            f"{name} is compute capability {capability}, but TensorFlow 2.2 only "
+            f"has kernels up to {MAX_COMPUTE_CAPABILITY} — running on CPU"
+        )
+    return True, f"{name} (compute capability {capability})"
+
+
+def default_threads():
+    env = os.environ.get("SYNTHSEG_THREADS")
+    if env:
+        return int(env)
+    ram_gb = _total_ram_gb()
+    if ram_gb is None or ram_gb < _THREAD_HEADROOM_GB:
+        return 1
+    return max(1, min(_MAX_AUTO_THREADS, (os.cpu_count() or 2) // 2))
+
+
+def use_gpu():
+    env = os.environ.get("SYNTHSEG_GPU")
+    if env:
+        return env == "1"
+    return detect_gpu()[0]
 
 
 @dataclass
@@ -137,6 +200,18 @@ def auto_crop(image_path):
     return [int(min(n, MAX_CROP)) for n in needed]
 
 
+def runtime_summary():
+    """One line describing how a run will execute, for the status bar.
+
+    Worth showing because the GPU fallback is silent otherwise: a card newer
+    than compute capability 7.5 simply gets skipped, and a run that the user
+    expected to take seconds takes minutes instead.
+    """
+    if use_gpu():
+        return f"SynthSeg: GPU — {detect_gpu()[1]}"
+    return f"SynthSeg: CPU, {default_threads()} thread(s) — {detect_gpu()[1]}"
+
+
 def _build_command(image_path, out_dir, fast, robust, parc, threads, crop):
     cmd = [
         str(SYNTHSEG_PYTHON),
@@ -149,7 +224,7 @@ def _build_command(image_path, out_dir, fast, robust, parc, threads, crop):
         "--qc", str(out_dir / "qc.csv"),
         "--threads", str(threads),
     ]
-    if not _USE_GPU:
+    if not use_gpu():
         cmd.append("--cpu")
     if fast:
         cmd.append("--fast")
@@ -225,7 +300,7 @@ def predict(
     fast=False,
     robust=False,
     parc=False,
-    threads=DEFAULT_THREADS,
+    threads=None,
     crop=None,
     on_progress=None,
 ):
@@ -238,6 +313,9 @@ def predict(
     reason = check_available(robust=robust, parc=parc)
     if reason is not None:
         raise ModelUnavailableError(reason)
+
+    if threads is None:
+        threads = default_threads()
 
     if crop is None:
         env_crop = os.environ.get("SYNTHSEG_CROP")
