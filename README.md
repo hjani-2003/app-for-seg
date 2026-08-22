@@ -261,7 +261,8 @@ it prints every path it looks for and whether it was found.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SYNTHSEG_PYTHON` | `~/miniconda3/envs/synthseg_38/bin/python` | Interpreter to run SynthSeg with. |
+| `SYNTHSEG_PYTHON` | auto-discovered | Interpreter to run SynthSeg with. Searched for as a sibling of the active conda env, then under `CONDA_EXE`'s base, then the usual conda install locations. Set this only if it lives somewhere unusual. |
+| `SYNTHSEG_ENV_NAME` | `synthseg_38` | Name of the conda env to look for. |
 | `SYNTHSEG_HOME` | `models/synthseg` | Where the SynthSeg code and weights live. |
 | `SYNTHSEG_THREADS` | 1 under 32 GB RAM, else `min(8, cores/2)` | TensorFlow intra/inter-op threads. **See the memory note below before raising this.** |
 | `SYNTHSEG_CROP` | auto | Space-separated per-axis patch size, e.g. `160 192 160`. Overrides the automatic crop. |

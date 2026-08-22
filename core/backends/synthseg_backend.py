@@ -25,10 +25,61 @@ SYNTHSEG_HOME = Path(
     or Path(__file__).resolve().parents[2] / "models" / "synthseg"
 )
 SYNTHSEG_SCRIPT = SYNTHSEG_HOME / "scripts" / "commands" / "SynthSeg_predict.py"
-SYNTHSEG_PYTHON = Path(
-    os.environ.get("SYNTHSEG_PYTHON")
-    or "/home/harman/miniconda3/envs/synthseg_38/bin/python"
-)
+SYNTHSEG_ENV_NAME = os.environ.get("SYNTHSEG_ENV_NAME") or "synthseg_38"
+
+
+def _candidate_interpreters():
+    """Where the SynthSeg conda env might live, best guess first.
+
+    Hardcoding one absolute path breaks the moment the repo moves to another
+    machine or another user's home, so the env is discovered instead. The
+    sibling-of-the-active-env guess is the reliable one: the app itself runs
+    from a conda env, and SynthSeg's env is normally created alongside it.
+    """
+    relative = Path("envs") / SYNTHSEG_ENV_NAME / "bin" / "python"
+
+    # Sibling of the currently active env (.../envs/unet_venv -> .../envs/synthseg_38)
+    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix:
+        yield Path(prefix).parent / SYNTHSEG_ENV_NAME / "bin" / "python"
+
+    # Conda's base install, from the conda executable on PATH
+    conda_exe = os.environ.get("CONDA_EXE")
+    if conda_exe:
+        yield Path(conda_exe).parent.parent / relative
+
+    for root in (
+        Path.home() / "miniconda3",
+        Path.home() / "anaconda3",
+        Path.home() / "miniforge3",
+        Path.home() / "mambaforge",
+        Path("/opt/conda"),
+    ):
+        yield root / relative
+
+
+def candidate_interpreters():
+    """_candidate_interpreters with duplicates removed, order preserved."""
+    seen = set()
+    for candidate in _candidate_interpreters():
+        if candidate not in seen:
+            seen.add(candidate)
+            yield candidate
+
+
+def _discover_interpreter():
+    explicit = os.environ.get("SYNTHSEG_PYTHON")
+    if explicit:
+        return Path(explicit)
+    for candidate in candidate_interpreters():
+        if candidate.is_file():
+            return candidate
+    # Nothing found: return the most likely location so the error message
+    # names a plausible path rather than an empty one.
+    return next(iter(candidate_interpreters()), Path(SYNTHSEG_ENV_NAME))
+
+
+SYNTHSEG_PYTHON = _discover_interpreter()
 
 # Weights the CLI picks per flag combination. Checked up front so a missing
 # download is reported before a multi-minute run rather than during it — but
@@ -147,7 +198,7 @@ def check_available(robust=False, parc=False):
     if not SYNTHSEG_PYTHON.is_file():
         return (
             f"SynthSeg interpreter not found at {SYNTHSEG_PYTHON}. Create the "
-            "synthseg_38 env (see README) or set SYNTHSEG_PYTHON."
+            f"{SYNTHSEG_ENV_NAME} env (see README) or set SYNTHSEG_PYTHON."
         )
     if not SYNTHSEG_SCRIPT.is_file():
         return (
