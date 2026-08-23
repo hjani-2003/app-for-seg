@@ -277,17 +277,21 @@ class MRIViewer(QMainWindow):
         self.synthseg_unavailable = synthseg_backend.check_available()
 
         if self.synthseg_unavailable is not None:
+            # The full message names an absolute path, too long to sit under
+            # the button, so the panel shows a short form and keeps the rest
+            # in the tooltip.
             reason = self.synthseg_unavailable
+            summary = "SynthSeg is not set up — hover for details"
         elif not has_case:
-            reason = "Load a BraTS case first"
+            reason = summary = "Load a BraTS case first"
         elif self.synthseg_running:
             # Loading a case calls this, so without the in-flight check a user
             # could start a second run on top of one already going.
-            reason = "A SynthSeg run is already in progress"
+            reason = summary = "A SynthSeg run is already in progress"
         else:
-            reason = None
+            reason = summary = None
 
-        self.synthseg_panel.set_run_enabled(reason is None, reason)
+        self.synthseg_panel.set_run_enabled(reason is None, reason, summary)
 
     def run_inference(self):
         if len(self.raw_volumes) != 4:
@@ -330,7 +334,10 @@ class MRIViewer(QMainWindow):
         options = self.synthseg_panel.options()
 
         self.synthseg_running = True
-        self.synthseg_panel.set_run_enabled(False)
+        self.synthseg_panel.set_run_enabled(
+            False, "A SynthSeg run is already in progress",
+            "Running… this takes a minute or two on CPU",
+        )
         self.progress_bar.setVisible(True)
         self.status.showMessage(
             f"Running SynthSeg on {modality}... "

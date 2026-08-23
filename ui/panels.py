@@ -1,13 +1,14 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QGroupBox, QHBoxLayout, QFormLayout,
-    QPushButton, QComboBox, QCheckBox
+    QPushButton, QComboBox, QCheckBox, QLabel
 )
 
 from core.constants import (
     MODEL_ARCHITECTURES, MODALITIES, PLANES, OVERLAY_MODES,
     OVERLAY_TUMOR, OVERLAY_SYNTHSEG, OVERLAY_BOTH, SYNTHSEG_DEFAULT_MODALITY,
 )
+from ui.style import TEXT_MUTED
 
 
 class InputPanel(QGroupBox):
@@ -178,9 +179,19 @@ class SynthSegPanel(QGroupBox):
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self.run_requested)
 
+        # A disabled button with no visible explanation sends people digging
+        # through logs; the reason belongs on screen, with the full text (which
+        # can be a long path) kept in the tooltip.
+        self.reason_label = QLabel()
+        self.reason_label.setWordWrap(True)
+        self.reason_label.setMaximumWidth(240)
+        self.reason_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.reason_label.setVisible(False)
+
         layout.addRow("Modality:", self.modality_box)
         layout.addRow("", options_row)
         layout.addRow("", self.run_btn)
+        layout.addRow("", self.reason_label)
         self.setLayout(layout)
 
     def _on_robust_toggled(self, checked):
@@ -198,12 +209,15 @@ class SynthSegPanel(QGroupBox):
             "parc": self.parc_check.isChecked(),
         }
 
-    def set_run_enabled(self, enabled, reason=None):
-        """Enable the button, or disable it and explain why on hover.
+    def set_run_enabled(self, enabled, reason=None, summary=None):
+        """Enable the button, or disable it and say why — on screen and on hover.
 
         The reason previously went to the status bar at start-up only, where
-        the next message overwrote it — leaving a greyed-out button with no
+        the next message overwrote it, leaving a greyed-out button with no
         recoverable explanation of what was missing.
         """
         self.run_btn.setEnabled(enabled)
         self.run_btn.setToolTip("" if enabled else (reason or ""))
+        self.reason_label.setToolTip(reason or "")
+        self.reason_label.setText("" if enabled else (summary or reason or ""))
+        self.reason_label.setVisible(not enabled and bool(summary or reason))
