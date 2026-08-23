@@ -11,11 +11,18 @@ ACCENT_PRESSED = "#4a78d1"
 DISABLED_BG = "#25272e"
 DISABLED_TEXT = "#5a5e68"
 
-# Per-class segmentation colors — dark-mode categorical slots 1-3 (blue, aqua, yellow), used in fixed order so each class keeps a stable, CVD-safe hue.
+# Per-class segmentation colors. Chosen by maximising CIEDE2000 separation as
+# actually displayed — alpha-blended over brain-intensity grays — between the
+# three classes, under normal vision and under simulated deuteranopia and
+# protanopia, then tie-broken on distance from the FreeSurfer anatomy palette
+# in ui/synthseg_lut.py so tumour stays readable over a SynthSeg overlay.
+# The previous blue/green/orange set sat almost exactly on top of the pallidum,
+# thalamus and accumbens colors (dE 7.2, 6.5 and 2.3 — the last below the
+# just-noticeable-difference threshold).
 SEGMENTATION_COLORS = {
-    1: "#3987e5",  # NCR — necrotic core
-    2: "#199e70",  # ED  — edema
-    3: "#c98500",  # ET  — enhancing tumor
+    1: "#bf0000",  # NCR — necrotic core
+    2: "#26beff",  # ED  — edema
+    3: "#ffff00",  # ET  — enhancing tumor
 }
 CLASS_LABELS = {1: "NCR", 2: "ED", 3: "ET"}
 
