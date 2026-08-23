@@ -4,8 +4,8 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel, QScrollArea
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel
 )
 
 from core.backends import synthseg_backend
@@ -20,16 +20,8 @@ from core.inference import InferenceWorker
 from core.synthseg_inference import SynthSegWorker
 from ui.mask_render import overlay_image_with_masks
 from ui.panels import InputPanel, ModelPanel, ViewPanel, SynthSegPanel
-from ui.style import DARK_STYLESHEET, apply_pg_theme, CLASS_LABELS, SEGMENTATION_COLORS
-from ui.synthseg_lut import label_color_hex, label_name
-
-
-# A parcellated SynthSeg case lists ~100 structures, so the legend scrolls
-# rather than growing the window. Wide enough for the longest structure names
-# at the app's default width.
-_LEGEND_COLUMNS = 6
-_LEGEND_ROW_HEIGHT = 22
-_LEGEND_MAX_HEIGHT = 72
+from ui.legend_dock import LegendDock
+from ui.style import DARK_STYLESHEET, apply_pg_theme
 
 
 class MRIViewer(QMainWindow):
@@ -87,9 +79,6 @@ class MRIViewer(QMainWindow):
         top_controls.addWidget(self.view_panel, alignment=Qt.AlignTop)
         top_controls.addStretch()
 
-        self.legend_widget = self._build_legend()
-        self.legend_widget.setVisible(False)
-
         self.mri_panel = self._build_panel("Axial")
         self.mask_panel = self._build_panel("Axial + Mask")
 
@@ -115,11 +104,13 @@ class MRIViewer(QMainWindow):
         self.progress_bar.setRange(0, 0)  # indefinite progress
 
         main_layout.addLayout(top_controls)
-        main_layout.addWidget(self.legend_widget)
         main_layout.addLayout(panels_row)
         main_layout.addLayout(slider_row)
         main_layout.addWidget(self.progress_bar)
         central.setLayout(main_layout)
+
+        self.legend_dock = LegendDock()
+        self.addDockWidget(Qt.RightDockWidgetArea, self.legend_dock)
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -154,82 +145,6 @@ class MRIViewer(QMainWindow):
             "image_view": image_view,
             "title_label": title_label,
         }
-
-    def _build_legend(self):
-        """A scrollable wrapping grid of swatches.
-
-        A single row was enough for three tumour classes, but a parcellated
-        SynthSeg volume carries around a hundred labels, so entries wrap into a
-        grid inside a height-capped scroll area instead of stretching the
-        window.
-        """
-        self.legend_grid = QGridLayout()
-        self.legend_grid.setContentsMargins(4, 2, 4, 2)
-        self.legend_grid.setHorizontalSpacing(14)
-        self.legend_grid.setVerticalSpacing(2)
-
-        self.legend_inner = QWidget()
-        self.legend_inner.setLayout(self.legend_grid)
-
-        legend = QScrollArea()
-        legend.setWidget(self.legend_inner)
-        legend.setWidgetResizable(True)
-        legend.setMaximumHeight(_LEGEND_MAX_HEIGHT)
-        legend.setFrameShape(QScrollArea.NoFrame)
-        legend.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        return legend
-
-    def _legend_entry(self, color_hex, text):
-        swatch = QLabel()
-        swatch.setFixedSize(12, 12)
-        swatch.setStyleSheet(f"background-color: {color_hex}; border-radius: 3px;")
-
-        entry = QWidget()
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
-        row.addWidget(swatch)
-        row.addWidget(QLabel(text))
-        entry.setLayout(row)
-        return entry
-
-    def _update_legend(self, show_tumor, show_synthseg):
-        while self.legend_grid.count():
-            item = self.legend_grid.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-        entries = []
-        if show_tumor:
-            entries += [
-                (SEGMENTATION_COLORS[class_id], label)
-                for class_id, label in CLASS_LABELS.items()
-            ]
-        if show_synthseg and self.synthseg_mask is not None:
-            # Only the structures actually present, so the legend describes
-            # this case rather than the whole label space.
-            present = np.unique(self.synthseg_mask)
-            entries += [
-                (label_color_hex(value), label_name(value))
-                for value in present
-                if value > 0
-            ]
-
-        for index, (color_hex, text) in enumerate(entries):
-            self.legend_grid.addWidget(
-                self._legend_entry(color_hex, text),
-                index // _LEGEND_COLUMNS,
-                index % _LEGEND_COLUMNS,
-            )
-
-        # widgetResizable would otherwise squash the rows to the viewport
-        # height and overlap their text. The height is computed from the row
-        # count rather than the layout's sizeHint, which is not yet valid for
-        # widgets added moments ago.
-        rows = -(-len(entries) // _LEGEND_COLUMNS)
-        self.legend_inner.setMinimumHeight(rows * _LEGEND_ROW_HEIGHT)
-        self.legend_widget.setVisible(bool(entries))
 
     def load_folder(self):
         folder = QFileDialog.getExistingDirectory(
@@ -347,6 +262,7 @@ class MRIViewer(QMainWindow):
     def _reset_synthseg(self):
         self.synthseg_mask = None
         self.synthseg_result = None
+        self.legend_dock.clear()
         self.input_panel.set_save_synthseg_enabled(False)
         self.view_panel.update_overlay_availability(
             self.segmentation is not None, False
@@ -532,7 +448,27 @@ class MRIViewer(QMainWindow):
         self.mri_panel["title_label"].setText(plane)
         self.mask_panel["title_label"].setText(f"{plane} + {overlay_title}")
         self.slice_label.setText(f"Slice {idx + 1} / {axis_len}  ·  {plane}")
-        self._update_legend(show_tumor, show_synthseg)
+        self._update_legend(show_tumor, show_synthseg, idx, axis)
+
+    def _update_legend(self, show_tumor, show_synthseg, idx, axis):
+        tumor_labels = (
+            self._labels_in(self.segmentation) if self.segmentation is not None else []
+        )
+        synthseg_labels = (
+            self._labels_in(self.synthseg_mask) if self.synthseg_mask is not None else []
+        )
+        self.legend_dock.set_content(tumor_labels, synthseg_labels)
+        self.legend_dock.set_sections_visible(show_tumor, show_synthseg)
+        self.legend_dock.set_present(
+            self._labels_in(np.take(self.segmentation, idx, axis=axis))
+            if show_tumor else [],
+            self._labels_in(np.take(self.synthseg_mask, idx, axis=axis))
+            if show_synthseg else [],
+        )
+
+    @staticmethod
+    def _labels_in(mask):
+        return [int(v) for v in np.unique(mask) if v > 0]
 
     def _render(self, image_view, display, axis):
         # Volumes are RAS+ canonical: transpose to put the slice's rows/cols in image-plane order, flip vertically so superior/anterior is up, then rotate 90 degrees clockwise to match the desired on-screen layout.

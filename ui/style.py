@@ -164,6 +164,46 @@ QProgressBar::chunk {{
     border-radius: 4px;
 }}
 
+QDockWidget {{
+    color: {TEXT_MUTED};
+    font-weight: 600;
+    titlebar-close-icon: none;
+    titlebar-normal-icon: none;
+}}
+
+QDockWidget::title {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 6px 10px;
+    text-align: left;
+}}
+
+QScrollArea {{
+    background-color: {BACKGROUND};
+    border: none;
+}}
+
+QScrollBar:vertical {{
+    background: {BACKGROUND};
+    width: 10px;
+    margin: 0;
+}}
+
+QScrollBar::handle:vertical {{
+    background: {BORDER};
+    border-radius: 5px;
+    min-height: 24px;
+}}
+
+QScrollBar::handle:vertical:hover {{
+    background: {TEXT_MUTED};
+}}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
+
 QStatusBar {{
     background-color: {SURFACE};
     color: {TEXT_MUTED};

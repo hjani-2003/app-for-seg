@@ -170,8 +170,11 @@ This opens the viewer window. No arguments, no config files to edit first.
 6. **Slice slider** — scrubs through the volume along the selected plane's
    axis.
 
-7. **Legend** — appears above the images and lists whatever the overlay is
-   currently showing. Tumour colors are fixed per class:
+7. **Legend** — a dock on the right, listing whatever the overlay is
+   currently showing. Structures present in the slice on screen are shown in
+   bold white and the rest are dimmed, so the list stays stable while you
+   scrub instead of reflowing. Drag it to the left edge, float it, or close
+   it from its title bar. Tumour colors are fixed per class:
 
    | Class | Meaning | Color |
    |---|---|---|
@@ -179,7 +182,7 @@ This opens the viewer window. No arguments, no config files to edit first.
    | ED | Edema | aqua/green |
    | ET | Enhancing tumor | yellow/orange |
 
-   SynthSeg entries list only the structures present in that case, using the
+   SynthSeg entries list the structures present in that case, using the
    canonical FreeSurfer colors.
 
 ---
