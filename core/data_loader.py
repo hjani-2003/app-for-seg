@@ -5,6 +5,20 @@ import nibabel as nib
 
 from core.constants import MODALITY_FILE_KEYS, MODALITIES
 
+NIFTI_SUFFIXES = (".nii", ".nii.gz")
+
+# Names produced by this app's own save actions. A SynthSeg output is named
+# after the modality it was run on, so without this it would be picked up as
+# that modality on the next load.
+DERIVED_MARKERS = ("synthseg", "_seg.nii", "_volumes.csv", "_qc.csv")
+
+
+def _is_case_input(fname):
+    lower = fname.lower()
+    if not lower.endswith(NIFTI_SUFFIXES):
+        return False
+    return not any(marker in lower for marker in DERIVED_MARKERS)
+
 
 def load_brats_folder(folder):
     """Load the raw (un-normalized) BraTS modality volumes from a case folder.
@@ -13,15 +27,22 @@ def load_brats_folder(folder):
     axial) voxel size in mm read from the RAS+-reoriented affine, and paths is
     {modality: source file path} for backends (e.g. nnUNet) that need to read
     the original, un-reoriented files themselves.
+
+    Non-NIfTI files and this app's own saved outputs are ignored, so a folder
+    that has been used as a save target still loads.
     """
     volumes = {}
     paths = {}
     spacing = None
 
-    for fname in os.listdir(folder):
+    # Sorted so a folder with more than one file matching a modality key
+    # resolves the same way every time.
+    for fname in sorted(os.listdir(folder)):
+        if not _is_case_input(fname):
+            continue
         lower = fname.lower()
         for key, modality in MODALITY_FILE_KEYS.items():
-            if key in lower:
+            if key in lower and modality not in volumes:
                 path = os.path.join(folder, fname)
                 # Reorient to RAS+ canonical so axis 0/1/2 reliably mean sagittal/coronal/axial regardless of how the file was stored.
                 img = nib.as_closest_canonical(nib.load(path))

@@ -35,6 +35,7 @@ class MRIViewer(QMainWindow):
         self.spacing = None
         self.paths = {}
         self.case_folder = None
+        self.output_dir = None
         self.segmentation = None
         self.worker = None
         self.synthseg_mask = None
@@ -171,6 +172,7 @@ class MRIViewer(QMainWindow):
 
         self.volumes = {m: normalize_for_display(v) for m, v in self.raw_volumes.items()}
         self.case_folder = folder
+        self.output_dir = None
         self.segmentation = None
         self._reset_synthseg()
         self.input_panel.set_save_enabled(False)
@@ -189,14 +191,50 @@ class MRIViewer(QMainWindow):
         self._refresh_run_enabled()
         self.update_view()
 
+    def _default_output_dir(self):
+        """Where results go unless the user picks somewhere else.
+
+        A sibling of the case folder rather than the case folder itself: the
+        loader scans a case folder for modality files, so results written next
+        to the inputs are at best clutter and at worst mistaken for inputs.
+        """
+        case_path = os.path.normpath(self.case_folder)
+        return os.path.join(
+            os.path.dirname(case_path), f"{os.path.basename(case_path)}_output"
+        )
+
+    def _choose_output_dir(self, title):
+        """Ask for a save directory, defaulting to (and creating) the sibling
+        results folder. Returns None if the user cancels or picks the case
+        folder, which is refused. The choice is remembered for this case so the
+        tumour mask and the SynthSeg outputs land together.
+        """
+        start = self.output_dir or self._default_output_dir()
+        try:
+            os.makedirs(start, exist_ok=True)
+        except OSError:
+            start = os.path.dirname(os.path.normpath(self.case_folder))
+
+        directory = QFileDialog.getExistingDirectory(self, title, start)
+        if not directory:
+            return None
+
+        if os.path.normpath(directory) == os.path.normpath(self.case_folder):
+            self.status.showMessage(
+                "Pick a directory outside the case folder — saving results "
+                "next to the input scans stops the case loading cleanly."
+            )
+            return None
+
+        self.output_dir = directory
+        return directory
+
     def save_folder(self):
         if self.segmentation is None:
             self.status.showMessage("Run inference before saving")
             return
 
-        directory = QFileDialog.getExistingDirectory(
-            self, "Select Output Directory"
-        )
+        directory = self._choose_output_dir("Select Output Directory")
         if not directory:
             return
 
@@ -216,7 +254,7 @@ class MRIViewer(QMainWindow):
             self.status.showMessage("Run SynthSeg before saving")
             return
 
-        directory = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        directory = self._choose_output_dir("Select SynthSeg Output Directory")
         if not directory:
             return
 
