@@ -211,4 +211,33 @@ Run the tests with `pytest`. They cover the pure-logic packages only —
 
 ---
 
+## Contributing
+
+Contributions are very welcome — issues, fixes, new backends, whole new
+features. This started as a way to close one loop, and it gets better the more
+people bend it toward what they actually need.
+
+A few things worth knowing before you open a pull request, because they are
+conventions rather than rules you could guess:
+
+- **Qt stays in `ui/`, logic stays in `core/` and the pure packages.**
+  `rano_measure/` imports no Qt at all, and that is enforced deliberately —
+  see the layering note in [NOTES.md](NOTES.md) for the bug that prompted it.
+  Anything you can test without a running application belongs on that side.
+- **Adding a model is a module and two lines in a registry.**
+  [CUSTOM_MODELS.md](CUSTOM_MODELS.md) covers the data contract and four ways
+  to plug one in, including the out-of-process pattern for dependencies that
+  cannot share an interpreter with the app.
+- **Tests cover pure logic, never the Qt layer.** `pytest` should stay green;
+  small synthetic volumes with hand-placed voxels are the house style.
+- **A failure a user could fix should say so on screen.** Greyed-out buttons
+  explain themselves, and the `check_*.py` scripts exist so a broken setup
+  produces a diagnosis rather than a traceback. New setup requirements deserve
+  the same treatment.
+
+Comments here explain *why*, not *what* — if a decision was non-obvious or you
+picked one option over another for a reason, that reason is worth a line.
+
+---
+
 Made with love by me and Claude, for pretty hoomans ❤️
