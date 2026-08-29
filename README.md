@@ -30,6 +30,9 @@ Three things follow from that purpose:
   lines in a registry. See [CUSTOM_MODELS.md](CUSTOM_MODELS.md).
 - **Tumour and anatomy are separate layers.** A tumour mask says where the
   lesion is; SynthSeg says which structures it abuts. They compose.
+- **A mask is the start, not the answer.** RANO sizes the lesion the way trials
+  read it; PyRadiomics describes it as features a model can consume. Both run
+  on the mask the viewer just produced, in the same window.
 
 ---
 
@@ -39,6 +42,7 @@ Three things follow from that purpose:
 |---|---|
 | **[FEATURES.md](FEATURES.md)** | What the viewer does, and why the non-obvious parts are the way they are |
 | **[CUSTOM_MODELS.md](CUSTOM_MODELS.md)** | Using it with your own models — the data contract, and four ways to plug one in |
+| **[NOTES.md](NOTES.md)** | The design log for the RANO measurement feature, phase by phase |
 
 ---
 
@@ -126,6 +130,9 @@ app-for-seg/
 ├── main.py                     entry point
 ├── check_synthseg.py           diagnoses a SynthSeg setup
 ├── check_radiomics.py          diagnoses a PyRadiomics setup
+├── rano_measure/               RANO bidimensional measurement — pure logic,
+│                               no Qt: regions, lesions, geometry, burden
+├── tests/                      pytest suite over the pure-logic packages
 ├── core/
 │   ├── constants.py            modalities, architectures, channel order, ROIs
 │   ├── data_loader.py          case loading, RAS+ canonicalisation, saving
@@ -140,6 +147,7 @@ app-for-seg/
 │   ├── panels.py               Input, Model, SynthSeg, Radiomics, View panels
 │   ├── legend_dock.py          the colour legend
 │   ├── radiomics_dock.py       the feature table
+│   ├── rano_dock.py            the RANO table and its on-slice callipers
 │   ├── mask_render.py          overlay compositing
 │   ├── style.py                dark theme, tumour class colours
 │   └── synthseg_lut.py         FreeSurfer label names and colours
@@ -159,7 +167,11 @@ for SwinUNETR, required for MaViN, and unusable by SynthSeg on cards newer
 than compute capability 7.5 (see [FEATURES.md](FEATURES.md)).
 
 Developed against: PySide6 6.11.1, pyqtgraph 0.14.0, nibabel 5.4.2,
-numpy 2.4.4, torch 2.12.0, monai 1.5.2, nnunetv2 2.7.0, scipy 1.17.1.
+numpy 2.4.4, torch 2.12.0, monai 1.5.2, nnunetv2 2.7.0, scipy 1.17.1,
+scikit-image 0.25.2.
+
+Run the tests with `pytest`. They cover the pure-logic packages only —
+`rano_measure/` and the radiomics planning — never the Qt layer.
 
 ---
 
@@ -185,6 +197,12 @@ numpy 2.4.4, torch 2.12.0, monai 1.5.2, nnunetv2 2.7.0, scipy 1.17.1.
 - **A region is listed as skipped** — that region has no voxels in this case's
   mask, or fewer than `minimumROISize`. Not a failure; the rest of the table is
   still valid — a non-enhancing tumour genuinely has no ET region.
+- **The RANO dock is empty after inference** — no lesion reached RANO's 10mm
+  minimum on both diameters. Rows appear as unmeasurable rather than vanishing,
+  so an empty table means no connected component survived at all.
+- **RANO's add/edit controls are greyed out** — they are axial-only. RANO is
+  defined on axial slices, so the dock disables them in the other planes rather
+  than measuring something the criterion doesn't describe.
 - **Inference is slow on CPU** — a sliding-window pass at 128³ takes well over
   a minute without a GPU. Expected.
 - **The overlay looks mirrored** — a backend returned a mask that wasn't

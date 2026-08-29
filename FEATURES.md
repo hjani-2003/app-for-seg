@@ -93,6 +93,74 @@ All three are overridable with `SYNTHSEG_GPU`, `SYNTHSEG_THREADS` and
 
 ---
 
+## RANO bidimensional measurement
+
+[RANO](https://pubmed.ncbi.nlm.nih.gov/37307495/) sizes a tumour by two
+perpendicular diameters on the slice where it is largest, and tracks the sum of
+their products across visits. It is the criterion trials are read against, so
+the viewer measures it directly rather than leaving it to be re-derived by hand
+from a volume.
+
+Measurements appear in the **RANO Measurements** dock as soon as inference
+finishes, one row per lesion, with the diameters drawn on the overlay panel.
+
+### Two regions, and one honest unknown
+
+| Region | Labels | |
+|---|---|---|
+| **CE** | ET | contrast-enhancing, matching RANO's CE-lesion definition |
+| **nonCE** | NCR + ED | non-enhancing |
+
+The CE region is uncontroversial — RANO's definition already excludes the
+necrotic core. **nonCE is a modelling choice the app does not pretend to have
+settled.** RANO's non-enhancing tumour excludes vasogenic edema, and edema is
+not separable from tumour by segmentation label alone. The default includes
+both NCR and ED; `rano_measure/regions.py:REGION_DEFS_ED_ONLY` is the
+alternative, exposed as a toggle rather than decided silently.
+
+### How a lesion is measured
+
+Lesions are 3D connected components. For each, the top few candidate slices by
+area are measured and the best kept — the largest cross-section is not always
+the one with the largest bidimensional product.
+
+On a slice, the contour is reduced to at most 80 points, every chord between
+them that stays inside the mask is a candidate, and the pair maximising the
+product is chosen subject to being perpendicular within 5°. A lesion is
+**measurable** only if both diameters reach 10mm, which is RANO's threshold.
+
+Diameters are computed in millimetres from the voxel spacing, not in pixels, so
+non-isotropic data measures correctly.
+
+### Target lesion selection
+
+RANO 2.0 caps a mixed tumour at **3 CE targets and 4 total**. Measurable
+lesions are ranked by product and selected under those caps
+(`rano_measure/burden.py`), and the dock sums the products per region — the
+number that actually gets compared between visits.
+
+### Measurements can be corrected by hand
+
+Automatic diameters are a starting point, not a verdict. Each pair is a
+draggable ROI on the slice, and a pair can be drawn from scratch by clicking
+two points; a manual pair is validated the same way an automatic one is
+(inside the mask, perpendicular within tolerance). This is axial-only — the
+RANO criterion is defined on axial slices, and the controls disable themselves
+in the other planes rather than silently measuring something else.
+
+### The measurement core has no Qt in it
+
+`rano_measure/` is pure numpy and scikit-image: region composition, connected
+components, contour geometry, burden selection. The widget lives in
+`ui/rano_dock.py`, outside the package. This was enforced after
+`rano_measure/regions.py` reached into `ui/style.py` for the label names and
+transitively pulled in pyqtgraph — the canonical mapping now lives in
+`core/constants.py:LABEL_NAMES`, which is also where the radiomics region
+definitions read it from. `NOTES.md` records that and the rest of the design
+log.
+
+---
+
 ## Radiomic features
 
 [PyRadiomics](https://pyradiomics.readthedocs.io/) computes standardised,
