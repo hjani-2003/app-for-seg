@@ -162,3 +162,7 @@ numpy 2.4.4, torch 2.12.0, monai 1.5.2, nnunetv2 2.7.0, scipy 1.17.1.
 - **The overlay looks mirrored** — a backend returned a mask that wasn't
   reoriented to RAS+ canonical. See
   [CUSTOM_MODELS.md → Orientation](CUSTOM_MODELS.md#orientation).
+
+---
+
+Made with love by me and Claude, for pretty hoomans ❤️
