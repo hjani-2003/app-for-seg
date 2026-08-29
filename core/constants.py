@@ -14,10 +14,16 @@ MODEL_ARCHITECTURES = ["SwinUNETR", "MaViN", "nnUnet"]
 PLANES = ["Axial", "Coronal", "Sagittal"]
 
 PLANE_AXES = {
-    "Axial": 2, 
-    "Coronal": 1, 
+    "Axial": 2,
+    "Coronal": 1,
     "Sagittal": 0
 }
+
+# Raw segmentation label id -> name (BraTS scheme: BG/NCR/ED/ET). Canonical
+# source for both the UI legend (ui/style.py:CLASS_LABELS) and the RANO
+# region mapping (rano_measure/regions.py:LABEL_IDS) — kept here, not in
+# ui/, so rano_measure/ has no reason to import anything Qt-related.
+LABEL_NAMES = {0: "BG", 1: "NCR", 2: "ED", 3: "ET"}
 
 
 # Channel order the trained models expect (matches the t1c, t1n, t2f, t2w order used in the BraTS-GoAT dataset JSONs the models were trained from).
@@ -37,12 +43,6 @@ SYNTHSEG_DEFAULT_MODALITY = "T1"
 # Modality -> the BraTS filename key, used to name saved SynthSeg outputs so a
 # T1 run and a T1Gd run of the same case do not overwrite each other.
 MODALITY_TO_FILE_KEY = {v: k for k, v in MODALITY_FILE_KEYS.items()}
-
-
-# Canonical tumour label id -> short name. Lives here rather than in ui/style.py
-# so pure-logic modules can name a class without importing the GUI stack (that
-# module imports pyqtgraph); ui/style.py re-exports it as CLASS_LABELS.
-LABEL_NAMES = {1: "NCR", 2: "ED", 3: "ET"}
 
 # ROIs radiomic features are extracted over. The three model classes on their
 # own, plus the two composite regions the BraTS literature reports against:

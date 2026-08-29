@@ -26,10 +26,17 @@ SEGMENTATION_COLORS = {
     2: "#26beff",  # ED  — edema
     3: "#ffff00",  # ET  — enhancing tumor
 }
-# Re-exported from core.constants so the id -> name mapping has one home:
-# pure-logic modules need it too, and importing it from here would drag
-# pyqtgraph in with it.
-CLASS_LABELS = LABEL_NAMES
+# Derived from core.constants so the id -> name mapping has one home: pure
+# logic modules need it too, and importing it from here would drag pyqtgraph in
+# with them. Background is dropped — the legend labels overlays, and there is
+# no overlay for "no tumour".
+CLASS_LABELS = {
+    label_id: name for label_id, name in LABEL_NAMES.items() if label_id != 0
+}
+
+# RANO bidimensional-measurement line colors, one per region type — picked
+# to stay visually distinct from SEGMENTATION_COLORS above.
+RANO_LINE_COLORS = {"CE": "#ff2fb0", "nonCE": "#39e6ff"}
 
 
 def hex_to_rgb01(hex_color):

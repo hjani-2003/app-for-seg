@@ -25,6 +25,7 @@ from ui.panels import (
 )
 from ui.legend_dock import LegendDock
 from ui.radiomics_dock import RadiomicsDock
+from ui.rano_dock import RanoDock
 from ui.style import DARK_STYLESHEET, apply_pg_theme
 
 
@@ -131,6 +132,13 @@ class MRIViewer(QMainWindow):
         self.radiomics_dock = RadiomicsDock()
         self.addDockWidget(Qt.RightDockWidgetArea, self.radiomics_dock)
         self.tabifyDockWidget(self.legend_dock, self.radiomics_dock)
+
+        # RANO takes the overlay panel's view because it draws its calliper
+        # ROIs onto the displayed slice, not into a table alone.
+        self.rano_dock = RanoDock(self.mask_panel["image_view"])
+        self.addDockWidget(Qt.RightDockWidgetArea, self.rano_dock)
+        self.tabifyDockWidget(self.legend_dock, self.rano_dock)
+
         self.legend_dock.raise_()
 
         self.status = QStatusBar()
@@ -185,6 +193,7 @@ class MRIViewer(QMainWindow):
             self.segmentation = None
             self._reset_synthseg()
             self._reset_radiomics()
+            self.rano_dock.clear()
             self.input_panel.set_save_enabled(False)
             self.slice_slider.setEnabled(False)
             self.status.showMessage(str(exc))
@@ -197,6 +206,7 @@ class MRIViewer(QMainWindow):
         self.segmentation = None
         self._reset_synthseg()
         self._reset_radiomics()
+        self.rano_dock.clear()
         self.input_panel.set_save_enabled(False)
 
         modality = self.view_panel.current_modality()
@@ -398,6 +408,7 @@ class MRIViewer(QMainWindow):
         # Features describe the mask they were extracted from, so a new mask
         # retires them rather than sitting alongside as if still current.
         self._reset_radiomics()
+        self.rano_dock.populate_from_segmentation(self.segmentation, self.spacing)
         self.input_panel.set_save_enabled(True)
         self.progress_bar.setVisible(False)
         self.view_panel.update_overlay_availability(
@@ -633,6 +644,7 @@ class MRIViewer(QMainWindow):
         self.mask_panel["title_label"].setText(f"{plane} + {overlay_title}")
         self.slice_label.setText(f"Slice {idx + 1} / {axis_len}  ·  {plane}")
         self._update_legend(show_tumor, show_synthseg, idx, axis)
+        self.rano_dock.show_slice(idx, plane)
 
     def _update_legend(self, show_tumor, show_synthseg, idx, axis):
         tumor_labels = (

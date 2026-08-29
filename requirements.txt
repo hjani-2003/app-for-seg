@@ -5,7 +5,10 @@ numpy
 pyyaml           # read the models' config/train yaml files
 einops           # used by MambaVision's internals (models/mavin-hpc/src)
 nnunetv2         # nnUNet backend inference (core/backends/nnunet_backend.py)
-scipy            # nibabel.processing, for the SynthSeg resampling guard
+scikit-image     # contour extraction for the RANO measurement
+                 # (rano_measure/geometry.py)
+scipy            # SynthSeg resampling guard; 3D connected components
+                 # (rano_measure/lesion.py)
 
 pytest           # the test suite (tests/), pure logic only — no Qt, no models
 
