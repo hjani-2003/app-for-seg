@@ -222,3 +222,7 @@ viewer just runs with random weights and says so in the status bar.
 - **Inference is slow** — on CPU, a single sliding-window pass at the
   configured ROI (128³ by default) can take well over a minute depending on
   the machine; this is expected without a GPU.
+
+---
+
+Made with love by me and Claude, for pretty hoomans ❤️
