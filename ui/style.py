@@ -1,5 +1,7 @@
 import pyqtgraph as pg
 
+from core.constants import LABEL_NAMES
+
 BACKGROUND = "#15161a"
 SURFACE = "#1c1e24"
 BORDER = "#2c2f38"
@@ -24,7 +26,10 @@ SEGMENTATION_COLORS = {
     2: "#26beff",  # ED  — edema
     3: "#ffff00",  # ET  — enhancing tumor
 }
-CLASS_LABELS = {1: "NCR", 2: "ED", 3: "ET"}
+# Re-exported from core.constants so the id -> name mapping has one home:
+# pure-logic modules need it too, and importing it from here would drag
+# pyqtgraph in with it.
+CLASS_LABELS = LABEL_NAMES
 
 
 def hex_to_rgb01(hex_color):

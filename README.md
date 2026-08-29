@@ -85,6 +85,22 @@ conda activate unet_venv
 It is found automatically as a sibling of the active env. Check it with
 `python check_synthseg.py`, which prints every path it looks for.
 
+**PyRadiomics** needs a third environment, for a different reason: its last
+release ships wheels for CPython 3.7-3.9 only, built against the numpy 1.x C
+ABI. On Python 3.11 with numpy 2 there is nothing to install but a source build
+that does not survive the numpy major version; on Python 3.9 it is a prebuilt
+wheel and nothing is compiled at all.
+
+```bash
+conda create -n radiomics_39 python=3.9 -y
+conda run -n radiomics_39 pip install "numpy<2" pyradiomics
+```
+
+**The `numpy<2` pin is not optional.** numpy 2 supports Python 3.9 too, so a
+bare `pip install pyradiomics` produces an env that looks right and fails at
+import. Found automatically as a sibling of the active env, like SynthSeg;
+check it with `python check_radiomics.py`.
+
 ---
 
 ## Input format
@@ -109,17 +125,21 @@ naming scheme, edit `MODALITY_FILE_KEYS` in `core/constants.py`.
 app-for-seg/
 ├── main.py                     entry point
 ├── check_synthseg.py           diagnoses a SynthSeg setup
+├── check_radiomics.py          diagnoses a PyRadiomics setup
 ├── core/
-│   ├── constants.py            modalities, architectures, channel order
+│   ├── constants.py            modalities, architectures, channel order, ROIs
 │   ├── data_loader.py          case loading, RAS+ canonicalisation, saving
 │   ├── preprocessing.py        per-channel z-score over nonzero voxels
 │   ├── inference.py            InferenceWorker — dispatches to a backend
 │   ├── synthseg_inference.py   SynthSegWorker — subprocess, streams progress
+│   ├── radiomics_extraction.py RadiomicsWorker — subprocess, streams progress
+│   ├── radiomics_params/       the Fast / Standard / Extended preset YAMLs
 │   └── backends/               one module per model
 ├── ui/
 │   ├── main_window.py          MRIViewer — wires the panels together
-│   ├── panels.py               Input, Model, SynthSeg, View panels
+│   ├── panels.py               Input, Model, SynthSeg, Radiomics, View panels
 │   ├── legend_dock.py          the colour legend
+│   ├── radiomics_dock.py       the feature table
 │   ├── mask_render.py          overlay compositing
 │   ├── style.py                dark theme, tumour class colours
 │   └── synthseg_lut.py         FreeSurfer label names and colours
@@ -157,8 +177,20 @@ numpy 2.4.4, torch 2.12.0, monai 1.5.2, nnunetv2 2.7.0, scipy 1.17.1.
   wasn't copied across or the `synthseg_38` env doesn't exist on that machine.
 - **"SynthSeg produced no segmentation"** with `std::bad_alloc` — out of
   memory. Lower `SYNTHSEG_THREADS`.
+- **Extract Features is greyed out** — hover it. Either no tumour mask has been
+  produced yet (features are extracted over one), or the `radiomics_39` env is
+  missing; `python check_radiomics.py` says which.
+- **"PyRadiomics produced no features"** mentioning numpy — the child env has
+  numpy 2. Recreate it with the `"numpy<2"` pin above.
+- **A region is listed as skipped** — that region has no voxels in this case's
+  mask, or fewer than `minimumROISize`. Not a failure; the rest of the table is
+  still valid — a non-enhancing tumour genuinely has no ET region.
 - **Inference is slow on CPU** — a sliding-window pass at 128³ takes well over
   a minute without a GPU. Expected.
 - **The overlay looks mirrored** — a backend returned a mask that wasn't
   reoriented to RAS+ canonical. See
   [CUSTOM_MODELS.md → Orientation](CUSTOM_MODELS.md#orientation).
+
+---
+
+Made with love by me and Claude, for pretty hoomans ❤️

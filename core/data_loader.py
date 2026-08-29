@@ -10,7 +10,9 @@ NIFTI_SUFFIXES = (".nii", ".nii.gz")
 # Names produced by this app's own save actions. A SynthSeg output is named
 # after the modality it was run on, so without this it would be picked up as
 # that modality on the next load.
-DERIVED_MARKERS = ("synthseg", "_seg.nii", "_volumes.csv", "_qc.csv")
+DERIVED_MARKERS = (
+    "synthseg", "_seg.nii", "_volumes.csv", "_qc.csv", "_radiomics",
+)
 
 
 def _is_case_input(fname):
@@ -86,5 +88,20 @@ def save_label_map(mask, reference_path, out_path):
     """
     ref = nib.as_closest_canonical(nib.load(reference_path))
     img = nib.Nifti1Image(mask.astype(np.int16), ref.affine)
+    img.header.set_xyzt_units(*ref.header.get_xyzt_units())
+    nib.save(img, out_path)
+
+
+def save_volume(volume, reference_path, out_path):
+    """Write an intensity volume to out_path as a .nii.gz.
+
+    The float-valued twin of save_segmentation, for handing a loaded modality
+    to a tool that reads files rather than arrays. Both write with the *canonical*
+    affine of reference_path, so an image and a mask saved this way share byte
+    identical geometry — which is what stops PyRadiomics rejecting the pair as
+    misaligned when the source file was not stored RAS+ to begin with.
+    """
+    ref = nib.as_closest_canonical(nib.load(reference_path))
+    img = nib.Nifti1Image(volume.astype(np.float32), ref.affine)
     img.header.set_xyzt_units(*ref.header.get_xyzt_units())
     nib.save(img, out_path)

@@ -1,0 +1,34 @@
+# Extended preset — the Standard classes over a filter bank.
+#
+# Adds Laplacian-of-Gaussian at three scales and one level of wavelet
+# decomposition, so each texture class is computed 12 times over rather than
+# once: roughly 1500 features per region, and minutes rather than seconds for a
+# full four-modality run. Worth it when the features feed a model that will do
+# its own selection; overkill for reading off a screen.
+
+imageType:
+  Original: {}
+  # Sigma in mm. 1mm picks up fine texture, 5mm coarse structure; the
+  # in-between value keeps the ladder from having a hole in it.
+  LoG:
+    sigma: [1.0, 3.0, 5.0]
+  Wavelet: {}
+
+featureClass:
+  shape:
+  firstorder:
+  glcm:
+  glrlm:
+  glszm:
+  gldm:
+  ngtdm:
+
+setting:
+  # See core/radiomics_params/fast.yaml for why MR is normalised before binning.
+  normalize: true
+  normalizeScale: 100
+  binWidth: 5
+
+  resampledPixelSpacing:
+  correctMask: false
+  minimumROISize: 8

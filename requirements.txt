@@ -7,9 +7,18 @@ einops           # used by MambaVision's internals (models/mavin-hpc/src)
 nnunetv2         # nnUNet backend inference (core/backends/nnunet_backend.py)
 scipy            # nibabel.processing, for the SynthSeg resampling guard
 
+pytest           # the test suite (tests/), pure logic only — no Qt, no models
+
 # SynthSeg is NOT installed here. It needs Python 3.8 + TensorFlow 2.2, which
 # cannot coexist with this environment, so it runs as a subprocess in its own
 # conda env — see the "SynthSeg" section in README.md.
+
+# PyRadiomics is NOT installed here either, for the same kind of reason. Its
+# last release ships wheels for CPython 3.7-3.9 with C extensions built against
+# the numpy 1.x ABI, and this env is Python 3.11 with numpy 2.x. It runs as a
+# subprocess in a Python 3.9 conda env — see the "Radiomic features" section in
+# README.md. Nothing new is needed on this side: the app writes NIfTI with
+# nibabel and reads the results as JSON.
 
 # monai and torch are versioned/built per-machine (CPU vs CUDA) — see the
 # "Setup" section in README.md instead of installing them from this file.

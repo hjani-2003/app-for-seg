@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel
 )
 
-from core.backends import synthseg_backend
+from core.backends import radiomics_backend, synthseg_backend
 from core.constants import (
     MODALITIES, PLANE_AXES, MODALITY_TO_FILE_KEY,
     OVERLAY_TUMOR, OVERLAY_SYNTHSEG, OVERLAY_BOTH,
@@ -17,10 +17,14 @@ from core.data_loader import (
     load_brats_folder, normalize_for_display, save_segmentation, save_label_map,
 )
 from core.inference import InferenceWorker
+from core.radiomics_extraction import RadiomicsWorker
 from core.synthseg_inference import SynthSegWorker
 from ui.mask_render import overlay_image_with_masks
-from ui.panels import InputPanel, ModelPanel, ViewPanel, SynthSegPanel
+from ui.panels import (
+    InputPanel, ModelPanel, ViewPanel, SynthSegPanel, RadiomicsPanel,
+)
 from ui.legend_dock import LegendDock
+from ui.radiomics_dock import RadiomicsDock
 from ui.style import DARK_STYLESHEET, apply_pg_theme
 
 
@@ -42,6 +46,9 @@ class MRIViewer(QMainWindow):
         self.synthseg_result = None
         self.synthseg_worker = None
         self.synthseg_running = False
+        self.radiomics_result = None
+        self.radiomics_worker = None
+        self.radiomics_running = False
 
         apply_pg_theme()
         self._build_ui()
@@ -59,6 +66,7 @@ class MRIViewer(QMainWindow):
         self.input_panel.load_requested.connect(self.load_folder)
         self.input_panel.save_requested.connect(self.save_folder)
         self.input_panel.save_synthseg_requested.connect(self.save_synthseg)
+        self.input_panel.save_radiomics_requested.connect(self.save_radiomics)
 
         self.model_panel = ModelPanel()
         self.model_panel.run_requested.connect(self.run_inference)
@@ -66,6 +74,9 @@ class MRIViewer(QMainWindow):
 
         self.synthseg_panel = SynthSegPanel()
         self.synthseg_panel.run_requested.connect(self.run_synthseg)
+
+        self.radiomics_panel = RadiomicsPanel()
+        self.radiomics_panel.run_requested.connect(self.run_radiomics)
 
         self.view_panel = ViewPanel()
         self.view_panel.changed.connect(self.update_view)
@@ -77,6 +88,7 @@ class MRIViewer(QMainWindow):
         top_controls.addWidget(self.input_panel, alignment=Qt.AlignTop)
         top_controls.addWidget(self.model_panel, alignment=Qt.AlignTop)
         top_controls.addWidget(self.synthseg_panel, alignment=Qt.AlignTop)
+        top_controls.addWidget(self.radiomics_panel, alignment=Qt.AlignTop)
         top_controls.addWidget(self.view_panel, alignment=Qt.AlignTop)
         top_controls.addStretch()
 
@@ -112,6 +124,14 @@ class MRIViewer(QMainWindow):
 
         self.legend_dock = LegendDock()
         self.addDockWidget(Qt.RightDockWidgetArea, self.legend_dock)
+
+        # Tabbed with the legend rather than stacked beside it: both want a
+        # tall column, and two of them side by side would leave the slices
+        # with less width than they need.
+        self.radiomics_dock = RadiomicsDock()
+        self.addDockWidget(Qt.RightDockWidgetArea, self.radiomics_dock)
+        self.tabifyDockWidget(self.legend_dock, self.radiomics_dock)
+        self.legend_dock.raise_()
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -164,6 +184,7 @@ class MRIViewer(QMainWindow):
             self.case_folder = None
             self.segmentation = None
             self._reset_synthseg()
+            self._reset_radiomics()
             self.input_panel.set_save_enabled(False)
             self.slice_slider.setEnabled(False)
             self.status.showMessage(str(exc))
@@ -175,6 +196,7 @@ class MRIViewer(QMainWindow):
         self.output_dir = None
         self.segmentation = None
         self._reset_synthseg()
+        self._reset_radiomics()
         self.input_panel.set_save_enabled(False)
 
         modality = self.view_panel.current_modality()
@@ -306,6 +328,11 @@ class MRIViewer(QMainWindow):
             self.segmentation is not None, False
         )
 
+    def _reset_radiomics(self):
+        self.radiomics_result = None
+        self.radiomics_dock.clear()
+        self.input_panel.set_save_radiomics_enabled(False)
+
     def _refresh_run_enabled(self):
         has_case = len(self.raw_volumes) == 4
         self.model_panel.set_run_enabled(has_case)
@@ -331,6 +358,25 @@ class MRIViewer(QMainWindow):
 
         self.synthseg_panel.set_run_enabled(reason is None, reason, summary)
 
+        # Re-checked here too, so creating the radiomics env takes effect
+        # without restarting the app.
+        radiomics_unavailable = radiomics_backend.check_available()
+        if radiomics_unavailable is not None:
+            reason = radiomics_unavailable
+            summary = "PyRadiomics is not set up — hover for details"
+        elif not has_case:
+            reason = summary = "Load a BraTS case first"
+        elif self.segmentation is None:
+            # Features are extracted over the tumour mask, so there is nothing
+            # to extract from until a model has produced one.
+            reason = summary = "Run inference first — features need a tumour mask"
+        elif self.radiomics_running:
+            reason = summary = "A feature extraction is already in progress"
+        else:
+            reason = summary = None
+
+        self.radiomics_panel.set_run_enabled(reason is None, reason, summary)
+
     def run_inference(self):
         if len(self.raw_volumes) != 4:
             self.status.showMessage("Please load a valid BraTS case")
@@ -349,6 +395,9 @@ class MRIViewer(QMainWindow):
 
     def on_inference_done(self, mask, info):
         self.segmentation = mask
+        # Features describe the mask they were extracted from, so a new mask
+        # retires them rather than sitting alongside as if still current.
+        self._reset_radiomics()
         self.input_panel.set_save_enabled(True)
         self.progress_bar.setVisible(False)
         self.view_panel.update_overlay_availability(
@@ -428,6 +477,96 @@ class MRIViewer(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status.showMessage(message)
         self._refresh_run_enabled()
+
+    def run_radiomics(self):
+        if self.segmentation is None:
+            self.status.showMessage("Run inference before extracting features")
+            return
+
+        modalities = self.radiomics_panel.modalities()
+        preset = self.radiomics_panel.current_preset()
+
+        self.radiomics_running = True
+        self.radiomics_panel.set_run_enabled(
+            False, "A feature extraction is already in progress",
+            "Extracting… the Extended preset takes about a minute",
+        )
+        self.progress_bar.setVisible(True)
+        self.status.showMessage(
+            f"Extracting {preset} features on {', '.join(modalities)}... "
+            f"({radiomics_backend.runtime_summary()})"
+        )
+
+        # The raw volumes, not the display copies: those are min-max normalized
+        # per volume, which would make first-order features a property of the
+        # scaling. MODALITIES[0] supplies the geometry, as the save paths do.
+        self.radiomics_worker = RadiomicsWorker(
+            self.raw_volumes,
+            self.segmentation,
+            self.paths[MODALITIES[0]],
+            modalities,
+            preset,
+            self.radiomics_panel.params_path(),
+            self.case_folder,
+        )
+        self.radiomics_worker.finished.connect(self.on_radiomics_done)
+        self.radiomics_worker.failed.connect(self.on_radiomics_failed)
+        self.radiomics_worker.progress.connect(self.status.showMessage)
+        self.radiomics_worker.start()
+
+    def on_radiomics_done(self, result):
+        self.radiomics_running = False
+        self.progress_bar.setVisible(False)
+
+        # A run takes long enough to swap the case meanwhile; if that
+        # happened these features belong to the old one.
+        if self.sender() is not None and self.sender().case_folder != self.case_folder:
+            self.status.showMessage(
+                "Discarded radiomic features — the case changed while they were "
+                "being extracted"
+            )
+            self._refresh_run_enabled()
+            return
+
+        self.radiomics_result = result
+        self.radiomics_dock.set_content(result)
+        self.radiomics_dock.raise_()
+        self.input_panel.set_save_radiomics_enabled(True)
+
+        self.status.showMessage(f"Feature extraction completed ({result.info})")
+        self._refresh_run_enabled()
+
+    def on_radiomics_failed(self, message):
+        self.radiomics_running = False
+        self.progress_bar.setVisible(False)
+        self.status.showMessage(message)
+        self._refresh_run_enabled()
+
+    def save_radiomics(self):
+        if self.radiomics_result is None:
+            self.status.showMessage("Extract features before saving")
+            return
+
+        directory = self._choose_output_dir("Select Feature Output Directory")
+        if not directory:
+            return
+
+        result = self.radiomics_result
+        case_name = os.path.basename(os.path.normpath(self.case_folder))
+        # The preset is part of the name because a Standard and an Extended run
+        # of the same case are different tables, not versions of one.
+        out_path = os.path.join(
+            directory, f"{case_name}_radiomics_{result.preset.lower()}.csv"
+        )
+
+        try:
+            with open(out_path, "w", newline="") as handle:
+                handle.write(result.to_csv())
+        except Exception as exc:
+            self.status.showMessage(f"Save failed: {exc}")
+            return
+
+        self.status.showMessage(f"Saved features to {out_path}")
 
     def _on_plane_changed(self, plane):
         if not self.volumes:

@@ -258,7 +258,13 @@ preprocessing from the files on disk.
 ## 4. Add an out-of-process backend
 
 Use this when your model's dependencies **cannot** coexist with the app's.
-SynthSeg is the worked example, and the reason the pattern exists.
+SynthSeg is the worked example, and the reason the pattern exists. There are
+now two implementations of it — `core/backends/synthseg_backend.py`, which
+drives an existing CLI, and `core/backends/radiomics_backend.py`, which ships a
+runner script (`radiomics_runner.py`) into the child env because PyRadiomics'
+own CLI aborts a whole batch when one item fails. Read whichever is closer to
+your case; the interpreter discovery, the availability check and the
+output-file-decides rule below are identical in both.
 
 ### When you need it
 

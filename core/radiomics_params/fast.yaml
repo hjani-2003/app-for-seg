@@ -1,0 +1,36 @@
+# Fast preset — shape and first-order statistics on the unfiltered image.
+#
+# Shape features do not depend on intensity at all, so this preset is the one
+# to reach for when comparing lesion morphology across cases, and it finishes
+# in seconds even over all five regions and all four modalities.
+
+imageType:
+  Original: {}
+
+featureClass:
+  shape:
+  firstorder:
+
+setting:
+  # MR intensities carry no absolute scale — a voxel value of 400 means nothing
+  # on its own the way a Hounsfield unit does — so PyRadiomics' CT-oriented
+  # binWidth of 25 discretises arbitrarily. Normalising to a fixed mean/sd
+  # first, scaling to a known range, and then binning finely gives grey levels
+  # that are comparable between scans of the same sequence.
+  normalize: true
+  normalizeScale: 100
+  binWidth: 5
+
+  # BraTS is already 1mm isotropic and co-registered, so there is nothing to
+  # resample onto. Point the panel at a custom params.yaml with a
+  # resampledPixelSpacing of [1, 1, 1] for data that is not.
+  resampledPixelSpacing:
+
+  # The mask is written by the app from the same canonical affine as the image
+  # (core/data_loader.py:save_volume), so geometry matches exactly and neither
+  # a tolerance nor a mask correction pass is needed.
+  correctMask: false
+
+  # Below this many voxels a texture matrix is noise. Regions smaller than it
+  # are reported as skipped rather than silently producing garbage.
+  minimumROISize: 8

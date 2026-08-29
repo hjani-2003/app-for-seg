@@ -37,3 +37,35 @@ SYNTHSEG_DEFAULT_MODALITY = "T1"
 # Modality -> the BraTS filename key, used to name saved SynthSeg outputs so a
 # T1 run and a T1Gd run of the same case do not overwrite each other.
 MODALITY_TO_FILE_KEY = {v: k for k, v in MODALITY_FILE_KEYS.items()}
+
+
+# Canonical tumour label id -> short name. Lives here rather than in ui/style.py
+# so pure-logic modules can name a class without importing the GUI stack (that
+# module imports pyqtgraph); ui/style.py re-exports it as CLASS_LABELS.
+LABEL_NAMES = {1: "NCR", 2: "ED", 3: "ET"}
+
+# ROIs radiomic features are extracted over. The three model classes on their
+# own, plus the two composite regions the BraTS literature reports against:
+# tumour core (necrosis + enhancing) and whole tumour (everything). Composites
+# matter because a feature computed over the whole lesion is not recoverable
+# from features of its parts.
+RADIOMICS_REGIONS = {
+    "NCR": (1,),
+    "ED": (2,),
+    "ET": (3,),
+    "TC": (1, 3),
+    "WT": (1, 2, 3),
+}
+
+RADIOMICS_REGION_DESCRIPTIONS = {
+    "NCR": "necrotic core",
+    "ED": "peritumoral edema",
+    "ET": "enhancing tumour",
+    "TC": "tumour core (NCR + ET)",
+    "WT": "whole tumour (NCR + ED + ET)",
+}
+
+# Extraction presets, in increasing cost. The names index the YAML files in
+# core/radiomics_params/.
+RADIOMICS_PRESETS = ["Fast", "Standard", "Extended"]
+RADIOMICS_CUSTOM_PRESET = "Custom params.yaml…"

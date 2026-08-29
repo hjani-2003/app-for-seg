@@ -1,0 +1,27 @@
+# Standard preset — all seven feature classes on the unfiltered image.
+#
+# About 110 features per region. This is the default, and the set most
+# published BraTS radiomics work reports: everything IBSI defines for a single
+# image, with no filter bank inflating the count.
+
+imageType:
+  Original: {}
+
+featureClass:
+  shape:
+  firstorder:
+  glcm:
+  glrlm:
+  glszm:
+  gldm:
+  ngtdm:
+
+setting:
+  # See core/radiomics_params/fast.yaml for why MR is normalised before binning.
+  normalize: true
+  normalizeScale: 100
+  binWidth: 5
+
+  resampledPixelSpacing:
+  correctMask: false
+  minimumROISize: 8

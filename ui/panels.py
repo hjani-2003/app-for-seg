@@ -1,12 +1,13 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QGroupBox, QHBoxLayout, QFormLayout,
-    QPushButton, QComboBox, QCheckBox, QLabel
+    QPushButton, QComboBox, QCheckBox, QLabel, QFileDialog
 )
 
 from core.constants import (
     MODEL_ARCHITECTURES, MODALITIES, PLANES, OVERLAY_MODES,
     OVERLAY_TUMOR, OVERLAY_SYNTHSEG, OVERLAY_BOTH, SYNTHSEG_DEFAULT_MODALITY,
+    RADIOMICS_PRESETS, RADIOMICS_CUSTOM_PRESET,
 )
 from ui.style import TEXT_MUTED
 
@@ -15,6 +16,7 @@ class InputPanel(QGroupBox):
     load_requested = Signal()
     save_requested = Signal()
     save_synthseg_requested = Signal()
+    save_radiomics_requested = Signal()
 
     def __init__(self):
         super().__init__("Input")
@@ -31,9 +33,14 @@ class InputPanel(QGroupBox):
         self.save_synthseg_btn.setEnabled(False)
         self.save_synthseg_btn.clicked.connect(self.save_synthseg_requested)
 
+        self.save_radiomics_btn = QPushButton("Save Features")
+        self.save_radiomics_btn.setEnabled(False)
+        self.save_radiomics_btn.clicked.connect(self.save_radiomics_requested)
+
         layout.addWidget(self.load_btn)
         layout.addWidget(self.save_btn)
         layout.addWidget(self.save_synthseg_btn)
+        layout.addWidget(self.save_radiomics_btn)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -42,6 +49,9 @@ class InputPanel(QGroupBox):
 
     def set_save_synthseg_enabled(self, enabled):
         self.save_synthseg_btn.setEnabled(enabled)
+
+    def set_save_radiomics_enabled(self, enabled):
+        self.save_radiomics_btn.setEnabled(enabled)
 
 
 class ModelPanel(QGroupBox):
@@ -216,6 +226,124 @@ class SynthSegPanel(QGroupBox):
         the next message overwrote it, leaving a greyed-out button with no
         recoverable explanation of what was missing.
         """
+        self.run_btn.setEnabled(enabled)
+        self.run_btn.setToolTip("" if enabled else (reason or ""))
+        self.reason_label.setToolTip(reason or "")
+        self.reason_label.setText("" if enabled else (summary or reason or ""))
+        self.reason_label.setVisible(not enabled and bool(summary or reason))
+
+
+class RadiomicsPanel(QGroupBox):
+    run_requested = Signal()
+
+    # Kept in the panel rather than alongside the YAML files: this is the
+    # one-line "what will this cost me" a user needs at the moment of choosing,
+    # not a description of the file's contents.
+    _PRESET_TOOLTIPS = {
+        "Fast": "Shape and first-order statistics only — 32 features per region.",
+        "Standard": "All seven feature classes on the unfiltered image — "
+                    "107 features per region.",
+        "Extended": "Standard, plus Laplacian-of-Gaussian and wavelet filters — "
+                    "1130 features per region, and about four times the wait.",
+    }
+
+    def __init__(self):
+        super().__init__("Radiomics")
+
+        layout = QFormLayout()
+        layout.setLabelAlignment(Qt.AlignRight)
+
+        # All four ticked: a radiomics table is normally reported across every
+        # sequence, and unticking is cheaper than hunting for the ones you want.
+        self.modality_checks = {}
+        modality_row = QHBoxLayout()
+        for modality in MODALITIES:
+            check = QCheckBox(modality)
+            check.setChecked(True)
+            check.toggled.connect(self._on_modality_toggled)
+            self.modality_checks[modality] = check
+            modality_row.addWidget(check)
+        modality_row.addStretch()
+
+        self.preset_box = QComboBox()
+        self.preset_box.addItems(RADIOMICS_PRESETS)
+        self.preset_box.addItem(RADIOMICS_CUSTOM_PRESET)
+        self.preset_box.setCurrentText("Standard")
+        self.preset_box.currentTextChanged.connect(self._on_preset_changed)
+        self._update_preset_tooltip(self.preset_box.currentText())
+
+        # Set only by the Custom entry. Remembered so the file dialog can
+        # reopen where it last was, and so cancelling out of it does not lose
+        # the file already in use.
+        self._custom_params = None
+
+        self.run_btn = QPushButton("Extract Features")
+        self.run_btn.setEnabled(False)
+        self.run_btn.clicked.connect(self.run_requested)
+
+        # Same reasoning as SynthSegPanel: a greyed-out button with its
+        # explanation only on hover sends people digging through logs.
+        self.reason_label = QLabel()
+        self.reason_label.setWordWrap(True)
+        self.reason_label.setMaximumWidth(240)
+        self.reason_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.reason_label.setVisible(False)
+
+        layout.addRow("Modalities:", modality_row)
+        layout.addRow("Features:", self.preset_box)
+        layout.addRow("", self.run_btn)
+        layout.addRow("", self.reason_label)
+        self.setLayout(layout)
+
+    def _on_modality_toggled(self, _checked):
+        # Unticking the last box would run an extraction over nothing, so the
+        # sole remaining one is locked until another is ticked.
+        selected = self.modalities()
+        for modality, check in self.modality_checks.items():
+            check.setEnabled(len(selected) > 1 or modality not in selected)
+
+    def _on_preset_changed(self, preset):
+        self._update_preset_tooltip(preset)
+        if preset != RADIOMICS_CUSTOM_PRESET:
+            return
+
+        # Asked every time Custom is selected, not just the first: the combo is
+        # the only route to the file, so remembering it silently would leave no
+        # way to switch to a different one.
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select PyRadiomics parameter file",
+            self._custom_params or "", "YAML (*.yaml *.yml)",
+        )
+        if path:
+            self._custom_params = path
+        elif not self._custom_params:
+            # Cancelled with nothing to fall back on: don't leave a Custom
+            # selection with no file behind it.
+            self.preset_box.setCurrentText("Standard")
+        self._update_preset_tooltip(self.preset_box.currentText())
+
+    def _update_preset_tooltip(self, preset):
+        if preset == RADIOMICS_CUSTOM_PRESET:
+            self.preset_box.setToolTip(
+                self._custom_params
+                or "Choose your own PyRadiomics parameter YAML."
+            )
+        else:
+            self.preset_box.setToolTip(self._PRESET_TOOLTIPS.get(preset, ""))
+
+    def modalities(self):
+        return [m for m, c in self.modality_checks.items() if c.isChecked()]
+
+    def current_preset(self):
+        return self.preset_box.currentText()
+
+    def params_path(self):
+        """The parameter file to use, or None to take the preset's bundled one."""
+        if self.current_preset() == RADIOMICS_CUSTOM_PRESET:
+            return self._custom_params
+        return None
+
+    def set_run_enabled(self, enabled, reason=None, summary=None):
         self.run_btn.setEnabled(enabled)
         self.run_btn.setToolTip("" if enabled else (reason or ""))
         self.reason_label.setToolTip(reason or "")

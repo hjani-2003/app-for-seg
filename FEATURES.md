@@ -93,6 +93,95 @@ All three are overridable with `SYNTHSEG_GPU`, `SYNTHSEG_THREADS` and
 
 ---
 
+## Radiomic features
+
+[PyRadiomics](https://pyradiomics.readthedocs.io/) computes standardised,
+IBSI-aligned descriptors of an ROI — shape, intensity distribution, and five
+families of texture matrix. Where the tumour model says *where* the lesion is,
+this says *what it looks like*, as numbers a downstream model can consume.
+
+It runs over the tumour mask, so **Extract Features** stays disabled until a
+segmentation exists.
+
+### Five regions, not three
+
+Features are extracted over each model class on its own and over the two
+composites the BraTS literature reports against:
+
+| Region | Labels | |
+|---|---|---|
+| **NCR** | 1 | necrotic core |
+| **ED** | 2 | peritumoral edema |
+| **ET** | 3 | enhancing tumour |
+| **TC** | 1 + 3 | tumour core |
+| **WT** | 1 + 2 + 3 | whole tumour |
+
+The composites are extracted, not derived. A texture feature of the whole
+lesion is not recoverable from the same feature computed over its parts.
+
+A region with no voxels in a given case — a non-enhancing tumour has no ET — is
+reported as skipped rather than failing the run, because that is a fact about
+the case, not an error.
+
+### Three presets
+
+Selected per run; each is a PyRadiomics parameter YAML in
+`core/radiomics_params/`, and **Custom params.yaml…** takes one of your own
+(`RADIOMICS_PARAMS` overrides the presets from the environment).
+
+| Preset | Contents | Features per region | A full run |
+|---|---|---|---|
+| **Fast** | shape + first-order, unfiltered | 32 | ~14s |
+| **Standard** | all seven feature classes, unfiltered | 107 | ~17s |
+| **Extended** | adds Laplacian-of-Gaussian (σ 1, 3, 5) and one wavelet level | 1130 | ~60s |
+
+Timings are for all five regions across all four modalities on a 182×218×182
+BraTS case, single-threaded on a desktop CPU.
+
+**MR is normalised before binning.** PyRadiomics' default `binWidth` of 25 is a
+CT setting: a Hounsfield unit means the same thing in every scan, so a fixed
+bin width discretises comparably. MR intensities have no such scale, so the
+presets normalise to a fixed mean and standard deviation first
+(`normalize: true`, `normalizeScale: 100`) and then bin finely (`binWidth: 5`).
+Without that, the same tissue in two scans lands in different grey levels and
+every texture feature is partly a measurement of the scanner.
+
+**Resampling is off.** BraTS is already 1mm isotropic and co-registered. Point
+the panel at a custom YAML with a `resampledPixelSpacing` for data that is not.
+
+### It runs in its own environment
+
+Same reason as SynthSeg, different specifics: PyRadiomics' last release ships
+wheels for CPython 3.7-3.9 with C extensions built against the numpy 1.x ABI,
+and this app is Python 3.11 with numpy 2. In a Python 3.9 env it is a prebuilt
+wheel with nothing to compile, so it runs as a subprocess there — see the
+README for the setup, and `python check_radiomics.py` to diagnose one.
+
+Unlike SynthSeg there is no CLI worth driving. The `pyradiomics` command can do
+batches, but a batch there is all-or-nothing: one region too small for a
+texture matrix aborts the lot. `core/backends/radiomics_runner.py` runs in the
+child env instead and isolates each pair, so a degenerate region costs you that
+row and nothing else.
+
+**Image and mask are written from the same affine.** Both go through
+`core/data_loader.py` with the canonical affine of the reference modality, so
+PyRadiomics sees two volumes on byte-identical geometry — which is what keeps
+it from rejecting the pair as misaligned when the source file was not stored
+RAS+ to begin with. The images handed over are the **raw** volumes, never the
+display copies: those are min-max scaled per volume, which would make every
+first-order feature a property of the scaling rather than of the tissue.
+
+### The table is transposed
+
+Features go down and regions across. The natural shape is one row per
+(modality, region) — that is how it is saved and how a model wants it — but
+that table is 107 columns wide on Standard and 1130 on Extended. Transposed,
+the widest it gets is four modalities by five regions, and the long axis is the
+one a scrollbar handles well. A class filter and a name search sit above it,
+which is the only way Extended is readable at all.
+
+---
+
 ## Overlays
 
 The right-hand panel draws **Tumor**, **SynthSeg**, or **Both**. Modes whose
@@ -146,15 +235,25 @@ close it from its title bar.
 
 ## Saving
 
-Two independent buttons; each writes a `.nii.gz` with the affine of its
-reference modality, taken from the canonical form so the file matches what was
-displayed.
+Three independent buttons. The two that write a `.nii.gz` use the affine of
+their reference modality, taken from the canonical form so the file matches
+what was displayed.
 
 **Save Segmentation** — the tumour mask:
 
 ```
 <case>_seg.nii.gz                                  uint8, labels 0-3
 ```
+
+**Save Features** — the radiomics table, long-form:
+
+```
+<case>_radiomics_<preset>.csv     one row per (modality, region), features across
+```
+
+The preset is in the name because a Standard and an Extended run of the same
+case are different tables, not versions of one. Like the SynthSeg CSVs, the
+result is held in memory from the run, so saving never re-extracts.
 
 **Save SynthSeg** — the anatomy mask plus both CSVs:
 
@@ -175,10 +274,14 @@ saving never re-runs the model.
 
 The parts that exist because they were needed:
 
-**Results are discarded when the case changed.** A SynthSeg run takes minutes,
-long enough to load a different case meanwhile. The worker records which case
-it was started for and stale results are dropped, rather than overlaying one
-patient's anatomy on another's images.
+**Results are discarded when the case changed.** A SynthSeg run, or an Extended
+feature extraction, takes minutes — long enough to load a different case
+meanwhile. Each worker records which case it was started for and stale results
+are dropped, rather than overlaying one patient's anatomy on another's images.
+
+**Features are retired when the mask changes.** Re-running inference clears the
+feature table, rather than leaving numbers on screen that describe a mask no
+longer displayed.
 
 **Only one run at a time.** Loading a case refreshes the UI, which previously
 re-enabled the Run button mid-run and allowed a second run on top of the
@@ -189,8 +292,8 @@ first.
 is re-checked whenever a case loads, so installing the environment takes
 effect without restarting.
 
-**`check_synthseg.py`** prints every path the backend looks for and whether it
-exists. It tolerates a half-updated checkout and reports that as the
+**`check_synthseg.py` and `check_radiomics.py`** print every path their backend
+looks for and whether it exists. It tolerates a half-updated checkout and reports that as the
 diagnosis, because a diagnostic that crashes is worse than none.
 
 **Errors reach the user.** A subprocess that dies takes its last 25 lines of
