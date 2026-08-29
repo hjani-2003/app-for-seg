@@ -160,6 +160,22 @@ greyed-out button.
 
 ---
 
+## To do
+
+The gap between cloning this and having it actually run is weights, and right
+now closing that gap is left entirely to the reader. Next:
+
+- [ ] **Make the nnUNet weights available.** nnU-Net needs a full trained
+      results folder rather than a single checkpoint, so this needs hosting
+      somewhere with room for it, plus the expected directory layout written
+      down.
+- [ ] **Add the SynthSeg weight download links.** These are published
+      upstream; the README should name them and say which file each option
+      needs, since `--robust` and `--parc` pull different ones and a partial
+      download only disables the runs that need what is missing.
+
+---
+
 ## Requirements
 
 Python 3.11 (developed against 3.11.15). A GPU is optional for the viewer and
