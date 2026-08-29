@@ -1,3 +1,5 @@
 __pycache__/
-.claude/
 models/
+.vscode
+.claude/
+.pytest_cache
