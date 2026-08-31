@@ -32,7 +32,8 @@ Three things follow from that purpose:
   lesion is; SynthSeg says which structures it abuts. They compose.
 - **A mask is the start, not the answer.** RANO sizes the lesion the way trials
   read it; PyRadiomics describes it as features a model can consume. Both run
-  on the mask the viewer just produced, in the same window.
+  on the mask the viewer just produced, and open their tables in windows of
+  their own — the slices keep the room they need.
 
 ---
 
@@ -144,10 +145,13 @@ app-for-seg/
 │   └── backends/               one module per model
 ├── ui/
 │   ├── main_window.py          MRIViewer — wires the panels together
-│   ├── panels.py               Input, Model, SynthSeg, Radiomics, View panels
+│   ├── panels.py               Input, Model, SynthSeg, Radiomics, RANO, View
 │   ├── legend_dock.py          the colour legend
-│   ├── radiomics_dock.py       the feature table
-│   ├── rano_dock.py            the RANO table and its on-slice callipers
+│   ├── tool_window.py          base window for the two result tables
+│   ├── radiomics_window.py     the feature table
+│   ├── rano_window.py          the RANO table and its on-slice callipers
+│   ├── flow_layout.py          the control strip: wraps when narrow
+│   ├── screen_fit.py           opening a window no larger than its screen
 │   ├── mask_render.py          overlay compositing
 │   ├── style.py                dark theme, tumour class colours
 │   └── synthseg_lut.py         FreeSurfer label names and colours
@@ -213,11 +217,11 @@ Run the tests with `pytest`. They cover the pure-logic packages only —
 - **A region is listed as skipped** — that region has no voxels in this case's
   mask, or fewer than `minimumROISize`. Not a failure; the rest of the table is
   still valid — a non-enhancing tumour genuinely has no ET region.
-- **The RANO dock is empty after inference** — no lesion reached RANO's 10mm
+- **The RANO window is empty after inference** — no lesion reached RANO's 10mm
   minimum on both diameters. Rows appear as unmeasurable rather than vanishing,
   so an empty table means no connected component survived at all.
 - **RANO's add/edit controls are greyed out** — they are axial-only. RANO is
-  defined on axial slices, so the dock disables them in the other planes rather
+  defined on axial slices, so it disables them in the other planes rather
   than measuring something the criterion doesn't describe.
 - **Inference is slow on CPU** — a sliding-window pass at 128³ takes well over
   a minute without a GPU. Expected.

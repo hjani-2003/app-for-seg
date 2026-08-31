@@ -1,4 +1,4 @@
-"""The radiomic feature table, as a side dock.
+"""The radiomic feature table, in its own window.
 
 Features go down and regions go across, not the other way round. The natural
 shape of the data is one row per (modality, region) — that is how it is saved,
@@ -9,12 +9,13 @@ is the one a scrollbar handles well.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QComboBox, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 
 from core.constants import RADIOMICS_REGION_DESCRIPTIONS
 from ui.style import TEXT_MUTED
+from ui.tool_window import ToolWindow
 
 ALL_CLASSES = "All classes"
 
@@ -41,17 +42,16 @@ def format_value(value):
     return f"{value:.6g}"
 
 
-class RadiomicsDock(QDockWidget):
+class RadiomicsWindow(ToolWindow):
+    # Wider than the default: the table is one column per (modality, region),
+    # up to twenty of them, and a feature name is long.
+    DEFAULT_SIZE = (1100, 700)
+
     def __init__(self):
-        super().__init__("Radiomics")
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setFeatures(
-            QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
-        )
+        super().__init__("Radiomic Features")
 
         self._result = None
 
-        body = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
@@ -92,8 +92,7 @@ class RadiomicsDock(QDockWidget):
         layout.addLayout(filter_row)
         layout.addWidget(self.table)
         layout.addWidget(self.skipped)
-        body.setLayout(layout)
-        self.setWidget(body)
+        self.setLayout(layout)
 
     def clear(self):
         self._result = None

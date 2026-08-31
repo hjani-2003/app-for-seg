@@ -1,4 +1,4 @@
-"""RANO Measurements dock widget.
+"""The RANO Measurements table, in its own window.
 
 pyqtgraph equivalent of the napari-based design in the Phase 3 spec (this
 app has no napari — see NOTES.md): instead of two Shapes layers, each
@@ -24,8 +24,8 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDockWidget, QHBoxLayout, QLabel,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
 from rano_measure.burden import select_target_lesions
@@ -33,15 +33,19 @@ from rano_measure.geometry import DEFAULT_MIN_DIAMETER_MM, validate_manual_pair
 from rano_measure.lesion import Lesion, find_lesions
 from rano_measure.regions import LABEL_IDS, REGION_DEFS, build_region_mask
 from ui.style import RANO_LINE_COLORS
+from ui.tool_window import ToolWindow
 
 AXIAL_AXIS = 2  # matches core.constants.PLANE_AXES["Axial"]
 
 COLUMNS = ["ID", "Region", "Slice", "Diameter 1 (mm)", "Diameter 2 (mm)", "Product (mm^2)", "Measurable", "Target"]
 
 
-class RanoDock(QDockWidget):
-    def __init__(self, image_view, parent=None):
-        super().__init__("RANO Measurements", parent)
+class RanoWindow(ToolWindow):
+    # Eight columns of numbers, but rarely many rows: wide and short.
+    DEFAULT_SIZE = (940, 520)
+
+    def __init__(self, image_view):
+        super().__init__("RANO Measurements")
 
         self._view_box = image_view.getView()
         self._active_rois = {}  # (lesion_id, "major"/"minor") -> pg.LineSegmentROI
@@ -62,7 +66,6 @@ class RanoDock(QDockWidget):
         self._set_axial_only_controls_enabled(False)
 
     def _build_ui(self):
-        container = QWidget()
         layout = QVBoxLayout()
 
         self.table = QTableWidget(0, len(COLUMNS))
@@ -70,6 +73,16 @@ class RanoDock(QDockWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        # Sized to the headings, not to a dock's width: "Diameter 1 (mm)" was
+        # truncated to "Diameter 1 (mm" in the column it used to sit in.
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setStretchLastSection(True)
+        # The first column is the lesion id, which is what a row is referred to
+        # by; a second, different number down the side is only confusing.
+        self.table.verticalHeader().setVisible(False)
 
         self.ce_sum_label = QLabel("CE target sum: -")
         self.nonce_sum_label = QLabel("nonCE target sum: -")
@@ -87,28 +100,43 @@ class RanoDock(QDockWidget):
         self.add_button.setCheckable(True)
         self.add_button.toggled.connect(self._on_add_toggled)
 
+        # Left-aligned with a trailing stretch: in a window this wide, letting
+        # the two controls share the full span turns a small combo box into a
+        # 500px one.
         add_row = QHBoxLayout()
         add_row.addWidget(QLabel("Region:"))
         add_row.addWidget(self.add_region_box)
         add_row.addWidget(self.add_button)
+        add_row.addStretch()
 
         self.status_label = QLabel("")
         self.warning_label = QLabel("")
         self.warning_label.setWordWrap(True)
         self.warning_label.setStyleSheet("color: #e0a000;")
 
+        sums_row = QHBoxLayout()
+        sums_row.setSpacing(24)
+        sums_row.addWidget(self.ce_sum_label)
+        sums_row.addWidget(self.nonce_sum_label)
+        sums_row.addStretch()
+
         layout.addWidget(self.table)
-        layout.addWidget(self.ce_sum_label)
-        layout.addWidget(self.nonce_sum_label)
+        layout.addLayout(sums_row)
         layout.addWidget(self.axial_only_hint)
         layout.addLayout(add_row)
         layout.addWidget(self.status_label)
         layout.addWidget(self.warning_label)
-        container.setLayout(layout)
-        self.setWidget(container)
+        self.setLayout(layout)
 
         self.delete_shortcut = QShortcut(QKeySequence(Qt.Key_Delete), self.table)
         self.delete_shortcut.activated.connect(self._remove_selected_lesions)
+
+    def closeEvent(self, event):
+        # Add mode reads clicks on the viewer's slice, not on this window, so
+        # leaving it armed after the window is gone would keep swallowing
+        # clicks with the prompt that explains them out of sight.
+        self.add_button.setChecked(False)
+        super().closeEvent(event)
 
     # ---- Auto-populate on load (Phase 3 §2) ----------------------------
 

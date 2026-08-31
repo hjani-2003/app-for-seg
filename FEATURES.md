@@ -101,8 +101,10 @@ their products across visits. It is the criterion trials are read against, so
 the viewer measures it directly rather than leaving it to be re-derived by hand
 from a volume.
 
-Measurements appear in the **RANO Measurements** dock as soon as inference
-finishes, one row per lesion, with the diameters drawn on the overlay panel.
+Measurements are made as soon as inference finishes, and the diameters are
+drawn on the overlay panel straight away. **RANO → Open Measurements** puts the
+table — one row per lesion — in a window of its own, so the numbers can sit
+beside the slices instead of squeezed into a column next to them.
 
 ### Two regions, and one honest unknown
 
@@ -136,7 +138,7 @@ non-isotropic data measures correctly.
 
 RANO 2.0 caps a mixed tumour at **3 CE targets and 4 total**. Measurable
 lesions are ranked by product and selected under those caps
-(`rano_measure/burden.py`), and the dock sums the products per region — the
+(`rano_measure/burden.py`), and the window sums the products per region — the
 number that actually gets compared between visits.
 
 ### Measurements can be corrected by hand
@@ -152,7 +154,7 @@ in the other planes rather than silently measuring something else.
 
 `rano_measure/` is pure numpy and scikit-image: region composition, connected
 components, contour geometry, burden selection. The widget lives in
-`ui/rano_dock.py`, outside the package. This was enforced after
+`ui/rano_window.py`, outside the package. This was enforced after
 `rano_measure/regions.py` reached into `ui/style.py` for the label names and
 transitively pulled in pyqtgraph — the canonical mapping now lives in
 `core/constants.py:LABEL_NAMES`, which is also where the radiomics region

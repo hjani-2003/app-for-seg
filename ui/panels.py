@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QFormLayout, QGridLayout,
+    QGroupBox, QHBoxLayout, QVBoxLayout, QFormLayout, QGridLayout,
     QPushButton, QComboBox, QCheckBox, QLabel, QFileDialog
 )
 
@@ -238,6 +238,7 @@ class SynthSegPanel(QGroupBox):
 
 class RadiomicsPanel(QGroupBox):
     run_requested = Signal()
+    show_table_requested = Signal()
 
     # Kept in the panel rather than alongside the YAML files: this is the
     # one-line "what will this cost me" a user needs at the moment of choosing,
@@ -284,6 +285,19 @@ class RadiomicsPanel(QGroupBox):
         self.run_btn.setEnabled(False)
         self.run_btn.clicked.connect(self.run_requested)
 
+        # The table opens in a window of its own, so it needs a way back after
+        # it is closed. No on-screen reason next to it: the only thing that
+        # ever disables it is "nothing extracted yet", and the button that
+        # extracts is right beside it.
+        self.show_table_btn = QPushButton("Feature Table")
+        self.show_table_btn.clicked.connect(self.show_table_requested)
+        self.set_show_table_enabled(False)
+
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(6)
+        buttons_row.addWidget(self.run_btn)
+        buttons_row.addWidget(self.show_table_btn)
+
         # Same reasoning as SynthSegPanel: a greyed-out button with its
         # explanation only on hover sends people digging through logs.
         self.reason_label = QLabel()
@@ -295,7 +309,7 @@ class RadiomicsPanel(QGroupBox):
 
         layout.addRow("Modalities:", modality_row)
         layout.addRow("Features:", self.preset_box)
-        layout.addRow("", self.run_btn)
+        layout.addRow("", buttons_row)
         layout.addRow("", self.reason_label)
         self.setLayout(layout)
 
@@ -353,3 +367,51 @@ class RadiomicsPanel(QGroupBox):
         self.reason_label.setToolTip(reason or "")
         self.reason_label.setText("" if enabled else (summary or reason or ""))
         self.reason_label.setVisible(not enabled and bool(summary or reason))
+
+    def set_show_table_enabled(self, enabled):
+        self.show_table_btn.setEnabled(enabled)
+        self.show_table_btn.setToolTip(
+            "Open the feature table in its own window" if enabled
+            else "Extract features first — there is no table yet"
+        )
+
+
+class RanoPanel(QGroupBox):
+    """The way in to the RANO measurements window.
+
+    RANO has no options to set: the measurements are made from the tumour mask
+    as soon as one exists, and everything else about them is edited on the
+    slice itself. So this panel is one button — but it is what makes the
+    feature discoverable now that its table is not permanently on screen.
+    """
+
+    open_requested = Signal()
+
+    def __init__(self):
+        super().__init__("RANO")
+
+        layout = QVBoxLayout()
+
+        self.open_btn = QPushButton("Open Measurements")
+        self.open_btn.clicked.connect(self.open_requested)
+
+        self.reason_label = QLabel()
+        self.reason_label.setWordWrap(True)
+        self.reason_label.setMaximumWidth(240)
+        self.reason_label.setMinimumWidth(0)
+        self.reason_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+
+        layout.addWidget(self.open_btn)
+        layout.addWidget(self.reason_label)
+        layout.addStretch()
+        self.setLayout(layout)
+
+        self.set_open_enabled(
+            False, "Run inference first — RANO measures the tumour mask"
+        )
+
+    def set_open_enabled(self, enabled, reason=None):
+        self.open_btn.setEnabled(enabled)
+        self.open_btn.setToolTip("" if enabled else (reason or ""))
+        self.reason_label.setText("" if enabled else (reason or ""))
+        self.reason_label.setVisible(not enabled and bool(reason))

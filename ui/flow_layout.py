@@ -65,6 +65,33 @@ class FlowLayout(QLayout):
             margins.left() + margins.right(), margins.top() + margins.bottom()
         )
 
+    def row_heights(self, width):
+        """The height of each wrapped row at this width, top to bottom.
+
+        The strip caps how tall it may grow, and a cap applied to a bare pixel
+        total slices whichever panel straddles it. Knowing where the rows end
+        lets it stop on a boundary instead.
+        """
+        margins = self.contentsMargins()
+        inner = width - margins.left() - margins.right()
+        heights = []
+        x = 0
+        row_height = 0
+
+        for item in self._items:
+            hint = item.sizeHint()
+            item_width = min(hint.width(), inner)
+            if row_height and x + item_width > inner:
+                heights.append(row_height)
+                x = 0
+                row_height = 0
+            x += item_width + self.spacing()
+            row_height = max(row_height, hint.height())
+
+        if row_height:
+            heights.append(row_height)
+        return heights
+
     def _layout(self, rect, apply):
         """Place items left to right, wrapping at the right edge.
 
@@ -134,6 +161,9 @@ class FlowRow(QWidget):
     def minimumSizeHint(self):
         return self._flow.minimumSize()
 
+    def row_heights(self, width):
+        return self._flow.row_heights(width)
+
 
 class FlowStrip(QScrollArea):
     """The control strip: wraps when narrow, scrolls when short.
@@ -154,6 +184,7 @@ class FlowStrip(QScrollArea):
 
     def __init__(self, spacing=10, parent=None):
         super().__init__(parent)
+        self._spacing = spacing
         self._row = FlowRow(spacing=spacing)
         self.setWidget(self._row)
         self.setWidgetResizable(True)
@@ -176,8 +207,24 @@ class FlowStrip(QScrollArea):
         window_height = self.window().height()
         if window_height > 0:
             cap = max(self._MIN_HEIGHT, int(window_height * self._MAX_FRACTION))
-            wanted = min(wanted, cap)
+            wanted = min(wanted, self._whole_rows_within(width, cap))
         return QSize(self._row.minimumSizeHint().width(), wanted)
+
+    def _whole_rows_within(self, width, cap):
+        """The tallest run of complete rows that fits in `cap`.
+
+        Stopping mid-row leaves a group box sliced through its controls, which
+        reads as a rendering fault rather than as something to scroll. Always
+        at least one row, even if that one row is taller than the cap — showing
+        a sliver of the first panel is worse than being slightly too tall.
+        """
+        total = 0
+        for index, height in enumerate(self._row.row_heights(width)):
+            candidate = total + height + (self._spacing if index else 0)
+            if candidate > cap and total:
+                break
+            total = candidate
+        return total or cap
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
