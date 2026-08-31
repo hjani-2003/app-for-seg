@@ -30,14 +30,21 @@ def build_model(device):
         in_channels=int(model_cfg.get("in_channels", 4)),
         out_channels=int(model_cfg.get("out_channels", 4)),
         feature_size=int(model_cfg.get("feature_size", 48)),
-        use_checkpoint=bool(model_cfg.get("use_checkpoint", True)),
+        # Gradient checkpointing recomputes activations to save memory for a
+        # backward pass there isn't one of here, so it is off regardless of what
+        # the training config says.
+        use_checkpoint=False,
         dropout_path_rate=float(model_cfg.get("dropout_path_rate", 0.0)),
         use_v2=bool(model_cfg.get("use_v2", False)),
     ).to(device)
 
     checkpoint = find_checkpoint(MODEL_DIR)
     if checkpoint is not None:
-        state = torch.load(checkpoint, map_location=device, weights_only=False)
+        # map_location="cpu", not the device: these files can carry optimizer
+        # and EMA state next to state_dict, and mapping to the device would put
+        # all of it in VRAM until build_model returns. load_state_dict copies
+        # the CPU tensors into the already-on-device parameters.
+        state = torch.load(checkpoint, map_location="cpu", weights_only=False)
         state_dict = state["state_dict"] if "state_dict" in state else state
         model.load_state_dict(state_dict)
 

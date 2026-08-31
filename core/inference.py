@@ -49,13 +49,22 @@ class InferenceWorker(QThread):
                     normalize_for_model(volume_4ch)
                 ).unsqueeze(0).to(device)
 
-                with torch.no_grad():
+                # inference_mode rather than no_grad: it also skips view and
+                # version-counter tracking, and nothing downstream of here
+                # needs autograd metadata — the mask leaves as a numpy array.
+                with torch.inference_mode():
                     logits = sliding_window_inference(
                         inputs=input_tensor,
                         roi_size=roi,
                         sw_batch_size=sw_batch_size,
                         predictor=model,
                         overlap=overlap,
+                        # The windows run on the GPU, but the stitched output —
+                        # out_channels x the whole volume in float32, the single
+                        # largest allocation of a run — is assembled on the CPU.
+                        # Nothing downstream needs it on the device.
+                        sw_device=device,
+                        device="cpu",
                     )
                     mask = torch.argmax(logits, dim=1)[0].cpu().numpy().astype(np.uint8)
 

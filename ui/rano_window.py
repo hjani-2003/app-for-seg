@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
-from rano_measure.burden import select_target_lesions
+from rano_measure.burden import select_largest_per_region, select_target_lesions
 from rano_measure.geometry import DEFAULT_MIN_DIAMETER_MM
 from rano_measure.lesion import find_lesions
 from rano_measure.regions import LABEL_IDS, REGION_DEFS, build_region_mask
@@ -122,6 +122,16 @@ class RanoWindow(ToolWindow):
         for region_name in ("CE", "nonCE"):
             region_mask = build_region_mask(label_volume, LABEL_IDS, REGION_DEFS, region_name)
             lesions.extend(find_lesions(region_mask, spacing, AXIAL_AXIS, region_name))
+
+        # One row per region, not one per component. find_lesions returns
+        # every connected component it can find, and on a real segmentation
+        # most of them are a handful of voxels measuring 1x0mm -- pages of
+        # rows whose products round to zero, with the lesion actually being
+        # reported buried among them. Only the largest measurable CE and the
+        # largest measurable nonCE survive, and they are dropped here rather
+        # than hidden at display time so the table, the callipers drawn on
+        # the slice and the target sums all describe the same two lesions.
+        lesions = select_largest_per_region(lesions)
 
         # find_lesions ids restart at 1 per region call -> renumber for a
         # single globally-unique id space across the combined CE+nonCE list.
