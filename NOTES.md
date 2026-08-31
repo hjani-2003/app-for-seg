@@ -269,10 +269,6 @@ did not:
   whether or not the window is open, so closing it is not "clear" — the
   lines stay on the slice, and reopening shows the same table. `show_slice`
   is still driven from `MRIViewer.update_view` for the same reason.
-- Add-line-pair mode reads clicks on the *viewer's* slice, not on its own
-  window, so `RanoWindow.closeEvent` disarms it. Otherwise closing the
-  window would leave clicks on the image being collected with the prompt
-  that explains them out of sight.
 - The windows are deliberately parentless, so they can be pushed behind the
   viewer or dragged onto a second monitor rather than being pinned above it.
   The cost is that `MRIViewer.closeEvent` has to close them itself: a
@@ -280,3 +276,26 @@ did not:
   is gone.
 - The legend stayed a dock. It is a key to what is on screen, read at a
   glance beside the slices, and narrow enough to cost them nothing.
+
+
+---
+
+# Later change — no lesion gets there by hand
+
+Phase 3 §4 built a four-click "Add Line Pair" mode: arm a button, click a
+major pair and a minor pair on the slice, and a new lesion joined the table,
+warned about but not rejected if it fell outside the mask or off
+perpendicular (`geometry.validate_manual_pair`). That has been removed, on
+the call that this table should report what was computed and nothing else —
+a hand-drawn row is indistinguishable from a measured one once it is in the
+table, and both feed the target sums.
+
+Removed with it: the add button and its region combo, the click collector on
+the viewer's scene, the prompt and warning labels, the per-region masks kept
+only so a manual pair could be validated against them, and
+`geometry.validate_manual_pair` itself, which had no other caller and no
+test.
+
+Deliberately kept: dragging a calliper, which corrects a measured diameter
+rather than inventing one, and deleting a row. Neither can put a lesion in
+the table that `find_lesions` did not find.

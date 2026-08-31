@@ -220,9 +220,9 @@ Run the tests with `pytest`. They cover the pure-logic packages only —
 - **The RANO window is empty after inference** — no lesion reached RANO's 10mm
   minimum on both diameters. Rows appear as unmeasurable rather than vanishing,
   so an empty table means no connected component survived at all.
-- **RANO's add/edit controls are greyed out** — they are axial-only. RANO is
-  defined on axial slices, so it disables them in the other planes rather
-  than measuring something the criterion doesn't describe.
+- **No RANO callipers on the slice in Coronal or Sagittal** — they are axial
+  only. RANO is defined on axial slices, so the window says so in the other
+  planes rather than drawing something the criterion doesn't describe.
 - **Inference is slow on CPU** — a sliding-window pass at 128³ takes well over
   a minute without a GPU. Expected.
 - **The overlay looks mirrored** — a backend returned a mask that wasn't

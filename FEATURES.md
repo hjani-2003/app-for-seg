@@ -141,14 +141,18 @@ lesions are ranked by product and selected under those caps
 (`rano_measure/burden.py`), and the window sums the products per region — the
 number that actually gets compared between visits.
 
-### Measurements can be corrected by hand
+### Every row is measured, not drawn
 
-Automatic diameters are a starting point, not a verdict. Each pair is a
-draggable ROI on the slice, and a pair can be drawn from scratch by clicking
-two points; a manual pair is validated the same way an automatic one is
-(inside the mask, perpendicular within tolerance). This is axial-only — the
-RANO criterion is defined on axial slices, and the controls disable themselves
-in the other planes rather than silently measuring something else.
+There is no way to add a lesion by hand. The table holds what
+`rano_measure/` computed from the mask and nothing else, so a number in it can
+always be traced back to the segmentation it came from. Each pair is still a
+draggable ROI, so a diameter can be corrected on the slice — dragging one
+recomputes its row live — and a row can be deleted, but neither can invent a
+lesion the mask does not contain.
+
+Callipers are drawn on axial slices only: the RANO criterion is defined there,
+and the window says so in the other planes rather than leaving an empty
+overlay looking like a fault.
 
 ### The measurement core has no Qt in it
 
