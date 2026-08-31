@@ -56,12 +56,12 @@ def build_model(device, roi):
         depths=int(depths[0] if isinstance(depths, list) else depths),
         num_heads=int(model_cfg.get("num_heads", 16)),
         d_state=int(model_cfg.get("d_state", 16)),
-        use_checkpoint=bool(model_cfg.get("use_checkpoint", False)),
+        use_checkpoint=False,  # inference only — see swin_unetr_backend
     ).to(device)
 
     checkpoint = find_checkpoint(MODEL_DIR)
     if checkpoint is not None:
-        state = torch.load(checkpoint, map_location=device, weights_only=False)
+        state = torch.load(checkpoint, map_location="cpu", weights_only=False)
         state_dict = state["state_dict"] if "state_dict" in state else state
         model.load_state_dict(state_dict)
 
