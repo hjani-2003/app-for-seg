@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QFormLayout,
+    QGroupBox, QHBoxLayout, QFormLayout, QGridLayout,
     QPushButton, QComboBox, QCheckBox, QLabel, QFileDialog
 )
 
@@ -21,7 +21,10 @@ class InputPanel(QGroupBox):
     def __init__(self):
         super().__init__("Input")
 
-        layout = QHBoxLayout()
+        # Two by two rather than a single row of four: in one row this panel
+        # alone claimed ~590px of minimum width, a third of a 1920px screen,
+        # and it is the widest thing in the control strip.
+        layout = QGridLayout()
         self.load_btn = QPushButton("Load BraTS Folder")
         self.load_btn.clicked.connect(self.load_requested)
 
@@ -37,11 +40,10 @@ class InputPanel(QGroupBox):
         self.save_radiomics_btn.setEnabled(False)
         self.save_radiomics_btn.clicked.connect(self.save_radiomics_requested)
 
-        layout.addWidget(self.load_btn)
-        layout.addWidget(self.save_btn)
-        layout.addWidget(self.save_synthseg_btn)
-        layout.addWidget(self.save_radiomics_btn)
-        layout.addStretch()
+        layout.addWidget(self.load_btn, 0, 0)
+        layout.addWidget(self.save_btn, 0, 1)
+        layout.addWidget(self.save_synthseg_btn, 1, 0)
+        layout.addWidget(self.save_radiomics_btn, 1, 1)
         self.setLayout(layout)
 
     def set_save_enabled(self, enabled):
@@ -195,6 +197,7 @@ class SynthSegPanel(QGroupBox):
         self.reason_label = QLabel()
         self.reason_label.setWordWrap(True)
         self.reason_label.setMaximumWidth(240)
+        self.reason_label.setMinimumWidth(0)
         self.reason_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         self.reason_label.setVisible(False)
 
@@ -286,6 +289,7 @@ class RadiomicsPanel(QGroupBox):
         self.reason_label = QLabel()
         self.reason_label.setWordWrap(True)
         self.reason_label.setMaximumWidth(240)
+        self.reason_label.setMinimumWidth(0)
         self.reason_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         self.reason_label.setVisible(False)
 

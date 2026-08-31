@@ -3,9 +3,10 @@ import os
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel
+    QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel, QSizePolicy
 )
 
 from core.backends import radiomics_backend, synthseg_backend
@@ -23,6 +24,7 @@ from ui.mask_render import overlay_image_with_masks
 from ui.panels import (
     InputPanel, ModelPanel, ViewPanel, SynthSegPanel, RadiomicsPanel,
 )
+from ui.flow_layout import FlowStrip
 from ui.legend_dock import LegendDock
 from ui.radiomics_dock import RadiomicsDock
 from ui.rano_dock import RanoDock
@@ -30,10 +32,20 @@ from ui.style import DARK_STYLESHEET, apply_pg_theme
 
 
 class MRIViewer(QMainWindow):
+    # The size the layout is designed around. Not a demand: it is scaled down
+    # to whatever screen the app actually opens on.
+    DESIGN_SIZE = (1100, 850)
+
+    # availableGeometry() excludes taskbars and panels but not the window's own
+    # title bar and borders, so a window sized to exactly the work area hangs
+    # off the bottom by the height of its decorations. This leaves room for
+    # them without having to guess their size, which is only known after the
+    # window manager has drawn them.
+    SCREEN_FRACTION = 0.92
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MRI Tumor Segmentation - Viewer")
-        self.resize(1100, 850)
 
         self.raw_volumes = {}
         self.volumes = {}
@@ -50,10 +62,84 @@ class MRIViewer(QMainWindow):
         self.radiomics_result = None
         self.radiomics_worker = None
         self.radiomics_running = False
+        self._screen_hooked = False
 
         apply_pg_theme()
         self._build_ui()
         self.setStyleSheet(DARK_STYLESHEET)
+        self._fit_to_screen()
+
+    def _fit_to_screen(self):
+        """Open at the design size, or the screen's size — whichever is smaller.
+
+        Read from the screen at run time rather than assuming the developer's
+        monitor: the design size is bigger than the work area on a small laptop
+        or a scaled display, and a window that opens oversized has its
+        lower-right corner — the slice slider and the status bar — off screen
+        from the start.
+        """
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(*self.DESIGN_SIZE)
+            return
+
+        available = screen.availableGeometry()
+        width, height = self._size_within(available, *self.DESIGN_SIZE)
+        self.resize(width, height)
+        self.move(
+            available.x() + (available.width() - width) // 2,
+            available.y() + (available.height() - height) // 2,
+        )
+
+    def _size_within(self, available, width, height):
+        """Shrink a size to fit a screen's work area, decorations included.
+
+        Never goes below the layout's own minimum — past that point there is
+        nothing left to give, and Qt would ignore it anyway.
+        """
+        minimum = self.minimumSizeHint()
+        return (
+            max(
+                min(width, int(available.width() * self.SCREEN_FRACTION)),
+                minimum.width(),
+            ),
+            max(
+                min(height, int(available.height() * self.SCREEN_FRACTION)),
+                minimum.height(),
+            ),
+        )
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Connected here rather than in __init__ because the native window —
+        # and so the signal that reports which screen it is on — does not exist
+        # until the window is shown.
+        handle = self.windowHandle()
+        if handle is not None and not self._screen_hooked:
+            handle.screenChanged.connect(self._on_screen_changed)
+            self._screen_hooked = True
+
+    def _on_screen_changed(self, screen):
+        """Re-fit after a move to another monitor, or a resolution change.
+
+        Undocking a laptop or plugging in a projector can leave a window that
+        fitted the old screen larger than the new one. Only ever shrinks: a
+        size the user chose is theirs to keep if it still fits.
+        """
+        if self.isMaximized() or self.isFullScreen() or screen is None:
+            return
+
+        available = screen.availableGeometry()
+        width, height = self._size_within(available, self.width(), self.height())
+        if (width, height) != (self.width(), self.height()):
+            self.resize(width, height)
+
+        # A shrunk window keeps its old top-left, which can sit beyond the new
+        # screen's edge, so it is pulled back inside.
+        x = min(max(self.x(), available.x()), available.right() - width + 1)
+        y = min(max(self.y(), available.y()), available.bottom() - height + 1)
+        if (x, y) != (self.x(), self.y()):
+            self.move(x, y)
 
     def _build_ui(self):
         central = QWidget()
@@ -84,14 +170,15 @@ class MRIViewer(QMainWindow):
         self.view_panel.plane_changed.connect(self._on_plane_changed)
         self.view_panel.update_overlay_availability(False, False)
 
-        top_controls = QHBoxLayout()
-        top_controls.setSpacing(10)
-        top_controls.addWidget(self.input_panel, alignment=Qt.AlignTop)
-        top_controls.addWidget(self.model_panel, alignment=Qt.AlignTop)
-        top_controls.addWidget(self.synthseg_panel, alignment=Qt.AlignTop)
-        top_controls.addWidget(self.radiomics_panel, alignment=Qt.AlignTop)
-        top_controls.addWidget(self.view_panel, alignment=Qt.AlignTop)
-        top_controls.addStretch()
+        # Wrapping and scrolling, not a fixed row: side by side these five
+        # panels demand more width than the screen has, which Qt honours by
+        # pushing the window off screen when it is maximised.
+        top_controls = FlowStrip(spacing=10)
+        top_controls.addWidget(self.input_panel)
+        top_controls.addWidget(self.model_panel)
+        top_controls.addWidget(self.synthseg_panel)
+        top_controls.addWidget(self.radiomics_panel)
+        top_controls.addWidget(self.view_panel)
 
         self.mri_panel = self._build_panel("Axial")
         self.mask_panel = self._build_panel("Axial + Mask")
@@ -117,8 +204,8 @@ class MRIViewer(QMainWindow):
         self.progress_bar.setVisible(False)
         self.progress_bar.setRange(0, 0)  # indefinite progress
 
-        main_layout.addLayout(top_controls)
-        main_layout.addLayout(panels_row)
+        main_layout.addWidget(top_controls)
+        main_layout.addLayout(panels_row, 1)
         main_layout.addLayout(slider_row)
         main_layout.addWidget(self.progress_bar)
         central.setLayout(main_layout)
@@ -161,6 +248,11 @@ class MRIViewer(QMainWindow):
         title_label.setAlignment(Qt.AlignCenter)
 
         image_view = pg.ImageView()
+        # The slices take the slack when the window grows, and are allowed to
+        # give width back when it shrinks — they are the one part of the
+        # layout with nothing that has to stay legible at a fixed size.
+        image_view.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        image_view.setMinimumSize(160, 160)
         image_view.ui.roiBtn.hide()
         image_view.ui.menuBtn.hide()
         image_view.ui.histogram.hide()
