@@ -1,4 +1,4 @@
-from rano_measure.burden import select_target_lesions
+from rano_measure.burden import select_largest_per_region, select_target_lesions
 from rano_measure.lesion import Lesion
 
 
@@ -82,3 +82,51 @@ def test_no_lesions_for_a_region_yields_zero_sums_not_an_error():
     assert summary.nonce_target_lesions == []
     assert summary.ce_product_sum_mm2 == 0
     assert summary.nonce_product_sum_mm2 == 0
+
+
+def test_largest_per_region_picks_one_of_each():
+    lesions = [
+        _lesion(1, "CE", product_mm2=3339.2),
+        _lesion(2, "CE", product_mm2=4.0),
+        _lesion(3, "nonCE", product_mm2=1970.6),
+        _lesion(4, "nonCE", product_mm2=986.0),
+    ]
+
+    largest = select_largest_per_region(lesions)
+
+    assert [l.id for l in largest] == [1, 3]
+
+
+def test_largest_per_region_ignores_a_bigger_non_measurable_lesion():
+    lesions = [
+        _lesion(1, "CE", product_mm2=5000, measurable=False),
+        _lesion(2, "CE", product_mm2=50, measurable=True),
+    ]
+
+    largest = select_largest_per_region(lesions)
+
+    assert [l.id for l in largest] == [2]
+
+
+def test_largest_per_region_keeps_regions_independent():
+    # The point of not reusing select_target_lesions: its cap is on the
+    # combined total, so an absent CE lesion would widen the nonCE
+    # selection to two. Here nonCE still yields exactly its largest.
+    lesions = [
+        _lesion(1, "nonCE", product_mm2=90),
+        _lesion(2, "nonCE", product_mm2=60),
+    ]
+
+    largest = select_largest_per_region(lesions)
+
+    assert [l.id for l in largest] == [1]
+
+
+def test_largest_per_region_with_nothing_measurable_is_empty_not_an_error():
+    lesions = [
+        _lesion(1, "CE", product_mm2=4.0, measurable=False),
+        _lesion(2, "nonCE", product_mm2=1.0, measurable=False),
+    ]
+
+    assert select_largest_per_region(lesions) == []
+    assert select_largest_per_region([]) == []

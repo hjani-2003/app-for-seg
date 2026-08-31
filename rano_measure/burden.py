@@ -7,6 +7,9 @@ MAX_TOTAL_TARGET_LESIONS combined. Sums bidimensional products separately
 for CE and nonCE -- does NOT combine them into a single burden number, since
 that decision belongs to response classification (out of scope for this
 phase).
+
+Also offers select_largest_per_region, the narrower one-per-region selection
+the measurement table reports.
 """
 from dataclasses import dataclass
 
@@ -58,3 +61,24 @@ def select_target_lesions(lesions, *, max_ce=MAX_CE_TARGET_LESIONS, max_total=MA
         ce_product_sum_mm2=sum(lesion.product_mm2 for lesion in ce_targets),
         nonce_product_sum_mm2=sum(lesion.product_mm2 for lesion in nonce_targets),
     )
+
+
+def select_largest_per_region(lesions, *, region_types=("CE", "nonCE")):
+    """The single largest measurable lesion of each region type.
+
+    Each region is ranked on its own, so one with nothing measurable simply
+    contributes nothing and never hands its place to the other -- which is
+    where select_target_lesions differs: its cap is on the combined total, so
+    an absent CE lesion there widens the nonCE selection instead.
+
+    Returned in `region_types` order, so CE precedes nonCE.
+    """
+    largest = []
+    for region_type in region_types:
+        candidates = [
+            lesion for lesion in lesions
+            if lesion.measurable and lesion.region_type == region_type
+        ]
+        if candidates:
+            largest.append(max(candidates, key=lambda lesion: lesion.product_mm2))
+    return largest
