@@ -3,7 +3,6 @@ import os
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFileDialog, QSlider, QProgressBar, QStatusBar, QLabel, QSizePolicy
@@ -22,26 +21,22 @@ from core.radiomics_extraction import RadiomicsWorker
 from core.synthseg_inference import SynthSegWorker
 from ui.mask_render import overlay_image_with_masks
 from ui.panels import (
-    InputPanel, ModelPanel, ViewPanel, SynthSegPanel, RadiomicsPanel,
+    InputPanel, ModelPanel, ViewPanel, SynthSegPanel, RadiomicsPanel, RanoPanel,
 )
 from ui.flow_layout import FlowStrip
 from ui.legend_dock import LegendDock
-from ui.radiomics_dock import RadiomicsDock
-from ui.rano_dock import RanoDock
+from ui.radiomics_window import RadiomicsWindow
+from ui.rano_window import RanoWindow
+from ui.screen_fit import fit_to_screen, size_within
 from ui.style import DARK_STYLESHEET, apply_pg_theme
 
 
 class MRIViewer(QMainWindow):
     # The size the layout is designed around. Not a demand: it is scaled down
-    # to whatever screen the app actually opens on.
-    DESIGN_SIZE = (1100, 850)
-
-    # availableGeometry() excludes taskbars and panels but not the window's own
-    # title bar and borders, so a window sized to exactly the work area hangs
-    # off the bottom by the height of its decorations. This leaves room for
-    # them without having to guess their size, which is only known after the
-    # window manager has drawn them.
-    SCREEN_FRACTION = 0.92
+    # to whatever screen the app actually opens on. The width is where the
+    # control strip stops needing a third wrapped row next to the legend, so a
+    # machine with the room for it shows every control without scrolling.
+    DESIGN_SIZE = (1400, 900)
 
     def __init__(self):
         super().__init__()
@@ -67,47 +62,7 @@ class MRIViewer(QMainWindow):
         apply_pg_theme()
         self._build_ui()
         self.setStyleSheet(DARK_STYLESHEET)
-        self._fit_to_screen()
-
-    def _fit_to_screen(self):
-        """Open at the design size, or the screen's size — whichever is smaller.
-
-        Read from the screen at run time rather than assuming the developer's
-        monitor: the design size is bigger than the work area on a small laptop
-        or a scaled display, and a window that opens oversized has its
-        lower-right corner — the slice slider and the status bar — off screen
-        from the start.
-        """
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is None:
-            self.resize(*self.DESIGN_SIZE)
-            return
-
-        available = screen.availableGeometry()
-        width, height = self._size_within(available, *self.DESIGN_SIZE)
-        self.resize(width, height)
-        self.move(
-            available.x() + (available.width() - width) // 2,
-            available.y() + (available.height() - height) // 2,
-        )
-
-    def _size_within(self, available, width, height):
-        """Shrink a size to fit a screen's work area, decorations included.
-
-        Never goes below the layout's own minimum — past that point there is
-        nothing left to give, and Qt would ignore it anyway.
-        """
-        minimum = self.minimumSizeHint()
-        return (
-            max(
-                min(width, int(available.width() * self.SCREEN_FRACTION)),
-                minimum.width(),
-            ),
-            max(
-                min(height, int(available.height() * self.SCREEN_FRACTION)),
-                minimum.height(),
-            ),
-        )
+        fit_to_screen(self, *self.DESIGN_SIZE)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -130,7 +85,7 @@ class MRIViewer(QMainWindow):
             return
 
         available = screen.availableGeometry()
-        width, height = self._size_within(available, self.width(), self.height())
+        width, height = size_within(self, available, self.width(), self.height())
         if (width, height) != (self.width(), self.height()):
             self.resize(width, height)
 
@@ -164,6 +119,10 @@ class MRIViewer(QMainWindow):
 
         self.radiomics_panel = RadiomicsPanel()
         self.radiomics_panel.run_requested.connect(self.run_radiomics)
+        self.radiomics_panel.show_table_requested.connect(self.show_radiomics_window)
+
+        self.rano_panel = RanoPanel()
+        self.rano_panel.open_requested.connect(self.show_rano_window)
 
         self.view_panel = ViewPanel()
         self.view_panel.changed.connect(self.update_view)
@@ -178,6 +137,7 @@ class MRIViewer(QMainWindow):
         top_controls.addWidget(self.model_panel)
         top_controls.addWidget(self.synthseg_panel)
         top_controls.addWidget(self.radiomics_panel)
+        top_controls.addWidget(self.rano_panel)
         top_controls.addWidget(self.view_panel)
 
         self.mri_panel = self._build_panel("Axial")
@@ -210,23 +170,21 @@ class MRIViewer(QMainWindow):
         main_layout.addWidget(self.progress_bar)
         central.setLayout(main_layout)
 
+        # The legend stays docked: it is a key to what is on screen, read at a
+        # glance beside the slices, and narrow enough to cost them nothing.
         self.legend_dock = LegendDock()
         self.addDockWidget(Qt.RightDockWidgetArea, self.legend_dock)
 
-        # Tabbed with the legend rather than stacked beside it: both want a
-        # tall column, and two of them side by side would leave the slices
-        # with less width than they need.
-        self.radiomics_dock = RadiomicsDock()
-        self.addDockWidget(Qt.RightDockWidgetArea, self.radiomics_dock)
-        self.tabifyDockWidget(self.legend_dock, self.radiomics_dock)
+        # The two tables do not. Both were docks tabbed behind the legend,
+        # which meant one visible at a time in a column too narrow for either.
+        # They open on their own buttons instead, and are built up front so
+        # they keep their contents across being closed and reopened.
+        self.radiomics_window = RadiomicsWindow()
 
         # RANO takes the overlay panel's view because it draws its calliper
-        # ROIs onto the displayed slice, not into a table alone.
-        self.rano_dock = RanoDock(self.mask_panel["image_view"])
-        self.addDockWidget(Qt.RightDockWidgetArea, self.rano_dock)
-        self.tabifyDockWidget(self.legend_dock, self.rano_dock)
-
-        self.legend_dock.raise_()
+        # ROIs onto the displayed slice, not into a table alone — so the lines
+        # stay on the slice whether or not its window is open.
+        self.rano_window = RanoWindow(self.mask_panel["image_view"])
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -237,6 +195,19 @@ class MRIViewer(QMainWindow):
         self.status.showMessage(
             self.synthseg_unavailable or f"Ready · {synthseg_backend.runtime_summary()}"
         )
+
+    def closeEvent(self, event):
+        # The tool windows are top-level and parentless, so one left open would
+        # keep the application running after the viewer itself is gone.
+        self.radiomics_window.close()
+        self.rano_window.close()
+        super().closeEvent(event)
+
+    def show_radiomics_window(self):
+        self.radiomics_window.show_window()
+
+    def show_rano_window(self):
+        self.rano_window.show_window()
 
     def _build_panel(self, title):
         container = QWidget()
@@ -285,7 +256,7 @@ class MRIViewer(QMainWindow):
             self.segmentation = None
             self._reset_synthseg()
             self._reset_radiomics()
-            self.rano_dock.clear()
+            self.rano_window.clear()
             self.input_panel.set_save_enabled(False)
             self.slice_slider.setEnabled(False)
             self.status.showMessage(str(exc))
@@ -298,7 +269,7 @@ class MRIViewer(QMainWindow):
         self.segmentation = None
         self._reset_synthseg()
         self._reset_radiomics()
-        self.rano_dock.clear()
+        self.rano_window.clear()
         self.input_panel.set_save_enabled(False)
 
         modality = self.view_panel.current_modality()
@@ -432,7 +403,8 @@ class MRIViewer(QMainWindow):
 
     def _reset_radiomics(self):
         self.radiomics_result = None
-        self.radiomics_dock.clear()
+        self.radiomics_window.clear()
+        self.radiomics_panel.set_show_table_enabled(False)
         self.input_panel.set_save_radiomics_enabled(False)
 
     def _refresh_run_enabled(self):
@@ -479,6 +451,14 @@ class MRIViewer(QMainWindow):
 
         self.radiomics_panel.set_run_enabled(reason is None, reason, summary)
 
+        # RANO needs no environment and no options — only a mask to measure.
+        # Enabled even when nothing was found automatically, because the window
+        # is also where a lesion is measured by hand.
+        self.rano_panel.set_open_enabled(
+            self.segmentation is not None,
+            "Run inference first — RANO measures the tumour mask",
+        )
+
     def run_inference(self):
         if len(self.raw_volumes) != 4:
             self.status.showMessage("Please load a valid BraTS case")
@@ -500,7 +480,7 @@ class MRIViewer(QMainWindow):
         # Features describe the mask they were extracted from, so a new mask
         # retires them rather than sitting alongside as if still current.
         self._reset_radiomics()
-        self.rano_dock.populate_from_segmentation(self.segmentation, self.spacing)
+        self.rano_window.populate_from_segmentation(self.segmentation, self.spacing)
         self.input_panel.set_save_enabled(True)
         self.progress_bar.setVisible(False)
         self.view_panel.update_overlay_availability(
@@ -632,8 +612,11 @@ class MRIViewer(QMainWindow):
             return
 
         self.radiomics_result = result
-        self.radiomics_dock.set_content(result)
-        self.radiomics_dock.raise_()
+        self.radiomics_window.set_content(result)
+        self.radiomics_panel.set_show_table_enabled(True)
+        # Opened rather than merely enabled: the table is what the run was for,
+        # and the window is where it now lives.
+        self.radiomics_window.show_window()
         self.input_panel.set_save_radiomics_enabled(True)
 
         self.status.showMessage(f"Feature extraction completed ({result.info})")
@@ -736,7 +719,7 @@ class MRIViewer(QMainWindow):
         self.mask_panel["title_label"].setText(f"{plane} + {overlay_title}")
         self.slice_label.setText(f"Slice {idx + 1} / {axis_len}  ·  {plane}")
         self._update_legend(show_tumor, show_synthseg, idx, axis)
-        self.rano_dock.show_slice(idx, plane)
+        self.rano_window.show_slice(idx, plane)
 
     def _update_legend(self, show_tumor, show_synthseg, idx, axis):
         tumor_labels = (

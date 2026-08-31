@@ -176,6 +176,34 @@ QProgressBar::chunk {{
     border-radius: 4px;
 }}
 
+QTableView {{
+    background-color: {BACKGROUND};
+    /* Without this the alternating rows fall back to the platform palette's
+       AlternateBase, which is near-white — light text on light rows, and half
+       a feature table unreadable. */
+    alternate-background-color: {SURFACE};
+    gridline-color: {BORDER};
+    selection-background-color: {ACCENT};
+    selection-color: #ffffff;
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+}}
+
+QHeaderView::section {{
+    background-color: {SURFACE};
+    color: {TEXT_MUTED};
+    border: none;
+    border-right: 1px solid {BORDER};
+    border-bottom: 1px solid {BORDER};
+    padding: 4px 8px;
+    font-weight: 600;
+}}
+
+QTableCornerButton::section {{
+    background-color: {SURFACE};
+    border: none;
+}}
+
 QDockWidget {{
     color: {TEXT_MUTED};
     font-weight: 600;

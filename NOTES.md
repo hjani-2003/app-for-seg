@@ -137,7 +137,7 @@ The Phase 3 spec was written in napari terms (Shapes layers,
 app has no napari (see the Phase 0 correction above) and got explicit
 sign-off to reinterpret every napari-specific instruction as its pyqtgraph
 equivalent rather than adding napari as a second embedded GUI framework.
-Mapping used, in `ui/rano_dock.py`:
+Mapping used, in `ui/rano_window.py`:
 
 | Spec (napari) | This app (pyqtgraph) |
 |---|---|
@@ -163,7 +163,7 @@ in development:
 - Composing these: voxel `(r, c)` in an `(R, C)` slice → view-space
   `(R-1-r, C-1-c)`, and since a point reflection is its own inverse, the
   same formula converts a clicked/dragged view-space point back to voxel
-  space. Implemented as `RanoDock._voxel_to_view` / `_view_to_voxel`.
+  space. Implemented as `RanoWindow._voxel_to_view` / `_view_to_voxel`.
 - End-to-end correctness (not just the isolated formula) was confirmed by
   driving the real app against a real BraTS case: the computed CE lesion
   line rendered exactly on top of the ET (orange) region in the mask
@@ -174,7 +174,7 @@ in development:
 leave these implicit):
 - Manual line drawing/editing is Axial-only, exactly as the spec
   requested — enforced by disabling the add controls and hiding all ROIs
-  whenever the plane selector isn't "Axial" (`RanoDock.show_slice`).
+  whenever the plane selector isn't "Axial" (`RanoWindow.show_slice`).
 - RANO lesion detection itself (`populate_from_segmentation`) always runs
   against the axial axis regardless of which plane is currently displayed
   — it's computed once per segmentation, not per plane.
@@ -235,12 +235,67 @@ across all four files.
 spec's suggested layout puts the Phase 3 GUI widget at
 `rano_measure/napari_widget.py`, i.e. *inside* the pure-logic package, to
 enforce "zero napari/Qt imports outside that one file." This app's
-widget lives at `ui/rano_dock.py` instead — *outside* `rano_measure/`
+widget lives at `ui/rano_window.py` instead — *outside* `rano_measure/`
 entirely, matching this codebase's existing convention of keeping all Qt
 code under `ui/` (`ui/main_window.py`, `ui/panels.py`, `ui/style.py`,
 etc.) and business logic under `core/`. This satisfies the underlying
 goal more strictly than the suggested layout would: `rano_measure/` has
 *zero* GUI imports, not just GUI imports isolated to one file within it.
-Not renaming/moving `rano_dock.py` into `rano_measure/` to match the
+Not renaming/moving `rano_window.py` into `rano_measure/` to match the
 suggested path, since doing so would break the codebase's own existing
 separation of concerns for no functional benefit.
+
+
+---
+
+# Later change — the table left the dock area
+
+Phase 3 attached the measurements to a `QDockWidget` on the right, tabbed
+behind the legend (see section 4 above), and radiomics arrived the same way.
+Two things went wrong with that in use:
+
+- Tabbed, only one of the three was visible at a time, and the two that
+  mattered most were the two hidden behind the legend.
+- Docked, they took width from the slices — and neither table fits the
+  column they were given. RANO is eight columns of numbers; radiomics is up
+  to twenty columns and 1500 rows.
+
+Both now open as their own top-level windows (`ui/tool_window.py`), on
+buttons in the control strip: **Radiomics → Feature Table** and
+**RANO → Open Measurements**. What this changed, and what it deliberately
+did not:
+
+- The measurement state and the calliper ROIs live on in `RanoWindow`
+  whether or not the window is open, so closing it is not "clear" — the
+  lines stay on the slice, and reopening shows the same table. `show_slice`
+  is still driven from `MRIViewer.update_view` for the same reason.
+- The windows are deliberately parentless, so they can be pushed behind the
+  viewer or dragged onto a second monitor rather than being pinned above it.
+  The cost is that `MRIViewer.closeEvent` has to close them itself: a
+  top-level window left open keeps the application alive after the viewer
+  is gone.
+- The legend stayed a dock. It is a key to what is on screen, read at a
+  glance beside the slices, and narrow enough to cost them nothing.
+
+
+---
+
+# Later change — no lesion gets there by hand
+
+Phase 3 §4 built a four-click "Add Line Pair" mode: arm a button, click a
+major pair and a minor pair on the slice, and a new lesion joined the table,
+warned about but not rejected if it fell outside the mask or off
+perpendicular (`geometry.validate_manual_pair`). That has been removed, on
+the call that this table should report what was computed and nothing else —
+a hand-drawn row is indistinguishable from a measured one once it is in the
+table, and both feed the target sums.
+
+Removed with it: the add button and its region combo, the click collector on
+the viewer's scene, the prompt and warning labels, the per-region masks kept
+only so a manual pair could be validated against them, and
+`geometry.validate_manual_pair` itself, which had no other caller and no
+test.
+
+Deliberately kept: dragging a calliper, which corrects a measured diameter
+rather than inventing one, and deleting a row. Neither can put a lesion in
+the table that `find_lesions` did not find.

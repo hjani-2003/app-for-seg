@@ -101,8 +101,10 @@ their products across visits. It is the criterion trials are read against, so
 the viewer measures it directly rather than leaving it to be re-derived by hand
 from a volume.
 
-Measurements appear in the **RANO Measurements** dock as soon as inference
-finishes, one row per lesion, with the diameters drawn on the overlay panel.
+Measurements are made as soon as inference finishes, and the diameters are
+drawn on the overlay panel straight away. **RANO → Open Measurements** puts the
+table — one row per lesion — in a window of its own, so the numbers can sit
+beside the slices instead of squeezed into a column next to them.
 
 ### Two regions, and one honest unknown
 
@@ -136,23 +138,27 @@ non-isotropic data measures correctly.
 
 RANO 2.0 caps a mixed tumour at **3 CE targets and 4 total**. Measurable
 lesions are ranked by product and selected under those caps
-(`rano_measure/burden.py`), and the dock sums the products per region — the
+(`rano_measure/burden.py`), and the window sums the products per region — the
 number that actually gets compared between visits.
 
-### Measurements can be corrected by hand
+### Every row is measured, not drawn
 
-Automatic diameters are a starting point, not a verdict. Each pair is a
-draggable ROI on the slice, and a pair can be drawn from scratch by clicking
-two points; a manual pair is validated the same way an automatic one is
-(inside the mask, perpendicular within tolerance). This is axial-only — the
-RANO criterion is defined on axial slices, and the controls disable themselves
-in the other planes rather than silently measuring something else.
+There is no way to add a lesion by hand. The table holds what
+`rano_measure/` computed from the mask and nothing else, so a number in it can
+always be traced back to the segmentation it came from. Each pair is still a
+draggable ROI, so a diameter can be corrected on the slice — dragging one
+recomputes its row live — and a row can be deleted, but neither can invent a
+lesion the mask does not contain.
+
+Callipers are drawn on axial slices only: the RANO criterion is defined there,
+and the window says so in the other planes rather than leaving an empty
+overlay looking like a fault.
 
 ### The measurement core has no Qt in it
 
 `rano_measure/` is pure numpy and scikit-image: region composition, connected
 components, contour geometry, burden selection. The widget lives in
-`ui/rano_dock.py`, outside the package. This was enforced after
+`ui/rano_window.py`, outside the package. This was enforced after
 `rano_measure/regions.py` reached into `ui/style.py` for the label names and
 transitively pulled in pyqtgraph — the canonical mapping now lives in
 `core/constants.py:LABEL_NAMES`, which is also where the radiomics region
